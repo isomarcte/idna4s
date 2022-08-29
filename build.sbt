@@ -1,3 +1,5 @@
+import org.typelevel.idna4s.build._
+
 ThisBuild / tlBaseVersion := "0.0"
 
 val Scala212 = "2.12.16"
@@ -78,7 +80,12 @@ lazy val core = crossProject(JVMPlatform, JSPlatform, NativePlatform)
         .map(value => s"import ${value}${wildcardImport.value}")
         .mkString("\n")
     },
-    consoleQuick / initialCommands := ""
+    consoleQuick / initialCommands := "",
+    Compile / sourceGenerators ++= List(
+      (Compile / sourceManaged).map(
+        UTS46IDNAMappingTable.generate(List("org", "typelevel", "core", "uts46"))
+      ).taskValue
+    )
   )
 
 lazy val scalacheck = crossProject(JVMPlatform, JSPlatform, NativePlatform)

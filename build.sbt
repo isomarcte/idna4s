@@ -36,7 +36,8 @@ ThisBuild / wildcardImport := {
 
 lazy val root = tlCrossRootProject
   .aggregate(
-    bootstring
+    bootstring,
+    core
   )
   .settings(name := "idna4s")
 
@@ -69,3 +70,7 @@ lazy val bootstring = crossProject(JVMPlatform, JSPlatform, NativePlatform)
     },
     consoleQuick / initialCommands := ""
   )
+
+lazy val core = crossProject(JVMPlatform, JSPlatform, NativePlatform).crossType(CrossType.Pure).in(file("core")).settings(
+  name := "idna4s-bootstring"
+).dependsOn(bootstring)

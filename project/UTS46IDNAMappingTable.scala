@@ -3,8 +3,11 @@ package org.typelevel.idna4s.build
 import scala.annotation.tailrec
 import scala.util.matching._
 import scala.util.Try
+import scala.util.Failure
+import scala.util.Success
 import scala.io.Source
 import java.io.File
+import java.net.URL
 import sbt._
 
 // object UTS46IDNAMappingTablePlugin extends AutoPlugin {
@@ -233,12 +236,62 @@ object UTS46IDNAMappingTable {
     def fromString(value: String): Either[String, Rows] =
       fromLines(value.linesIterator.toList)
 
-    def fromFile(path: String): Either[String, Rows] =
+    def fromSource(source: => Source): Try[Rows] = {
+      Try(source).flatMap{s =>
+        val lines: List[String] = s.getLines.toList
+        Try(s.close).map(_ => lines)
+      }
+    }.flatMap(lines => fromLines(lines).fold(e => Failure(new RuntimeException(e)): Try[Rows], value => Success(value)))
+
+    def fromFile(path: String): Try[Rows] =
       Try(new File(path)).flatMap(f =>
-        Try(Source.fromFile(f)).flatMap{s =>
-          val lines: List[String] = s.getLines.toList
-          Try(s.close).map(_ => lines)
-        }
-      ).toEither.swap.map(_.getLocalizedMessage).swap.flatMap(fromLines)
+        fromSource(Source.fromFile(f))
+      )
+
+    def fromURL(url: String): Try[Rows] =
+      Try(new URL(url)).flatMap(url =>
+        fromSource(Source.fromURL(url))
+      )
+
+    /** Generate the mapping table code by downloading the mappings from
+      * `www.unicode.org`.
+      *
+      * @param version The version of Unicode to use to generate the mapping
+      *        table code, if `None`, then "latest" will be used. This is the
+      *        recommended usage as Unicode will post pre-release versions on
+      *        their site that we probably don't want to implement a release
+      *        against.
+      */
+    def fromUnicodeURL(version: Option[UnicodeVersion]): Try[Rows] = {
+      def makeUrl(rawVersion: String): String =
+        s"https://www.unicode.org/Public/idna/${rawVersion}/IdnaMappingTable.txt"
+
+      val url: String =
+        version.fold(
+          makeUrl("latest")
+        )(version =>
+          makeUrl(version.value)
+        )
+
+      fromURL(url).flatMap(rows =>
+        // Validate that if an explicit version was specified, that is what we
+        // parsed.
+        version.fold(
+          Success(rows): Try[Rows]
+        )(version =>
+          if (rows.version == version) {
+            Success(rows)
+          } else {
+            Failure(new RuntimeException(s"Expected to get the mapping table for version ${version}, but got ${rows.version}."))
+          }
+        )
+      )
+    }
+
+    def fromUnicodeURL: Try[Rows] =
+      fromUnicodeURL(None)
+
+    def fromUnicodeURL(version: UnicodeVersion): Try[Row] =
+      fromUnicodeURL(Some(version))
   }
 }

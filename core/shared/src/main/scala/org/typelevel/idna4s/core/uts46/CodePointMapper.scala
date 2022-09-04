@@ -132,8 +132,8 @@ trait CodePointMapper extends Serializable {
       case -12 => // DEVIATION_IGNORED
         Deviation.ignored
       case otherwise =>
-        // Mapped. There is no sentinel value for mapped, because in that a
-        // code point maps to a single new code point, we just return the
+        // Mapped. There is no sentinel value for mapped, because in this case
+        // a code point maps to a single new code point, we just return the
         // mapping directly.
         Mapped.one(CodePoint.unsafeFromInt(otherwise))
     }

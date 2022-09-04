@@ -84,11 +84,11 @@ object LookupTableGen {
   object Config {
     def default(
       methodBaseName: String
-    ): Config = Config(50, 3500, true, methodBaseName, "value", "case _ => Int.MinValue\n", 1, 2, "Int")
+    ): Config = Config(50, 3500, true, methodBaseName, "value", s"""case otherwise => throw new RuntimeException(s"Invalid input: $$otherwise")${"\n"}""", 1, 2, "Int")
 
     def defaultList(
       methodBaseName: String
-    ): Config = default(methodBaseName).copy(returnType = "List[Int]", finalCase = "case _ => Nil\n")
+    ): Config = default(methodBaseName).copy(returnType = "NonEmptyList[Int]")
   }
 
   private def emitIndent(startingIndentLevel: Int, indentIncrement: Int)(level: Int, sb: StringBuilder): StringBuilder =
@@ -146,9 +146,9 @@ object LookupTableGen {
         pattern.inputCount < 2
     }
 
-  private def emitMethod(methodBaseName: String, methodSuffixBase: String, argumentName: String, finalCase: String, asHex: Boolean, returnType: String, indent: (Int, StringBuilder) => StringBuilder)(sb: StringBuilder, methodCases: SortedMap[CasePattern, String]): StringBuilder =
+  private def emitMethod(methodBaseName: String, methodSuffixBase: String, modifiers: SortedSet[String], argumentName: String, finalCase: String, asHex: Boolean, returnType: String, indent: (Int, StringBuilder) => StringBuilder)(sb: StringBuilder, methodCases: SortedMap[CasePattern, String]): StringBuilder =
     ((indent(1, indent(0, sb).append(
-      s"private def ${methodBaseName}${methodSuffixBase}(${argumentName}: Int): ${returnType} =\n")
+      s"""${modifiers.mkString(" ")} def ${methodBaseName}${methodSuffixBase}(${argumentName}: Int): ${returnType} =${"\n"}""")
     ).append(s"(${argumentName}: @switch) match {\n") match {
       // Intentional shadow
       case sb =>
@@ -168,19 +168,25 @@ object LookupTableGen {
         indent(1, sb).append("}\n\n")
     }
 
-  private def emitMethods(methodBaseName: String, methodSuffixBase: String, argumentName: String, finalCase: String, asHex: Boolean, returnType: String, indent: (Int, StringBuilder) => StringBuilder)(sb: StringBuilder, methods: NonEmptySet[SortedMap[CasePattern, String]]): StringBuilder = {
+  private def emitMethods(methodBaseName: String, methodSuffixBase: String, initModifiers: SortedSet[String], otherModifiers: SortedSet[String], argumentName: String, finalCase: String, asHex: Boolean, returnType: String, indent: (Int, StringBuilder) => StringBuilder)(sb: StringBuilder, methods: NonEmptySet[SortedMap[CasePattern, String]]): StringBuilder = {
 
     @tailrec
     def loop(sb: StringBuilder, methods: NonEmptySet[SortedMap[CasePattern, String]], n: Int): StringBuilder =
       (methods.head, methods.tail) match {
         case (method, rest) =>
+          val modifiers: SortedSet[String] =
+            if (n < 1) {
+              initModifiers
+            } else {
+              otherModifiers
+            }
           NonEmptySet.fromSet(rest) match {
             case Some(rest) =>
               val n1: Int = n + 1
               val finalCase: String = s"case otherwise => ${methodBaseName}${methodSuffixBase}${n1}(otherwise)\n"
-              loop(emitMethod(methodBaseName, s"${methodSuffixBase}${n}", argumentName, finalCase, asHex, returnType, indent)(sb, method), rest, n1)
+              loop(emitMethod(methodBaseName, s"${methodSuffixBase}${n}", modifiers, argumentName, finalCase, asHex, returnType, indent)(sb, method), rest, n1)
             case None =>
-              emitMethod(methodBaseName, s"${methodSuffixBase}${n}", argumentName, finalCase, asHex, returnType, indent)(sb, method)
+              emitMethod(methodBaseName, s"${methodSuffixBase}${n}", modifiers, argumentName, finalCase, asHex, returnType, indent)(sb, method)
           }
       }
 
@@ -188,14 +194,15 @@ object LookupTableGen {
   }
 
   private def emitSingleAndMultiCasePatternMethods(methodBaseName: String, argumentName: String, finalCase: String, asHex: Boolean, returnType: String, indent: (Int, StringBuilder) => StringBuilder)(sb: StringBuilder, singleCasePatternMethods: NonEmptySet[SortedMap[CasePattern, String]], multiCasePatternMethods: NonEmptySet[SortedMap[CasePattern, String]]): StringBuilder = {
-    val multiSuffix: String = "Multi"
+    val multiSuffix: String = "Range"
     val singleCasePatternMethodsFinalCase: String =
       s"case otherwise => ${methodBaseName}${multiSuffix}0(otherwise)\n"
+    val privateFinalModifiers: SortedSet[String] = SortedSet("private", "final")
 
-    emitMethods(methodBaseName, "Single", argumentName, singleCasePatternMethodsFinalCase, asHex, returnType, indent)(sb, singleCasePatternMethods) match {
+    emitMethods(methodBaseName, "", SortedSet("override", "protected", "final"), privateFinalModifiers, argumentName, singleCasePatternMethodsFinalCase, asHex, returnType, indent)(sb, singleCasePatternMethods) match {
       // Intentional shadow
       case sb =>
-        emitMethods(methodBaseName, multiSuffix, argumentName, finalCase, asHex, returnType, indent)(sb, multiCasePatternMethods)
+        emitMethods(methodBaseName, multiSuffix, privateFinalModifiers, privateFinalModifiers, argumentName, finalCase, asHex, returnType, indent)(sb, multiCasePatternMethods)
     }
   }
 

@@ -464,7 +464,7 @@ object UTS46IDNAMappingTable {
                 )(comment =>
                   s"// ${comment.value}"
                 )
-              acc + (row.casePattern -> s"""List(${a.map(a => printAsHex(a.value)).mkString_(", ")}) ${commentString}${"\n"}""")
+              acc + (row.casePattern -> s"""NonEmptyList.of(${a.map(a => printAsHex(a.value)).mkString_(", ")}) ${commentString}${"\n"}""")
             case _ =>
               acc
           }
@@ -516,7 +516,7 @@ object UTS46IDNAMappingTable {
                 )(comment =>
                   s"// ${comment.value}"
                 )
-              acc + (row.casePattern -> s"""List(${l.map(a => printAsHex(a.value)).mkString(", ")}) ${commentString}${"\n"}""")
+              acc + (row.casePattern -> s"""NonEmptyList.of(${l.map(a => printAsHex(a.value)).mkString(", ")}) ${commentString}${"\n"}""")
             case _ =>
               acc
           }
@@ -568,7 +568,7 @@ object UTS46IDNAMappingTable {
                 )(comment =>
                   s"// ${comment.value}"
                 )
-              acc + (row.casePattern -> s"""List(${a.map(a => printAsHex(a.value)).mkString_(", ")}) ${commentString}${"\n"}""")
+              acc + (row.casePattern -> s"""NonEmptyList.of(${a.map(a => printAsHex(a.value)).mkString_(", ")}) ${commentString}${"\n"}""")
             case _ =>
               acc
           }
@@ -578,182 +578,32 @@ object UTS46IDNAMappingTable {
     /** Given a package name, generate the `String` content of the generated
       * source file.
       */
-    def asSourceFile(packageName: String): String = {
+    def asSourceFile: String = {
       // Approximately 9000 lines in the 14.0.0 version
       val sb: StringBuilder = new StringBuilder(9000 * 3)
 
-      val developersDoc: String = """  // Developer's note: The method's below are tuned for performance. When
-                                    |  // mapping a code point for the UTS-46 mapping operation, the first
-                                    |  // method called will be mapCodePointSingle0. If the return value of
-                                    |  // this method is >= 0, it means that the the input maps directly to the
-                                    |  // returned code point so the caller can replace it in the input String and
-                                    |  // move on. If the return value < 0 then it should be one of the
-                                    |  // sentinel values defined at the top of this file. This instructs the
-                                    |  // caller on how to process the result. We don't return Option or Either
-                                    |  // to avoid boxing. In the case where the input maps to multiple
-                                    |  // replacement code points, we return a sentinel value as well to avoid
-                                    |  // having to return a List when usually the size of the List would be one,
-                                    |  // again to avoid boxing in the common case.
-                                    |  // This is all quite confusing, which is why the only publicly
-                                    |  // exposed method is mapCodePoints, which hides all this complexity from
-                                    |  // the callers.
-                                    |""".stripMargin
-
-      val prelude: String = s"""package ${packageName}
+      val prelude: String = s"""package org.typelevel.idna4s.core.uts46
                                |
                                |import scala.annotation.switch
-                               |import scala.annotation.tailrec
+                               |import cats.data._
                                |
                                |// THIS FILE IS GENERATED, DO NOT MODIFY BY HAND
                                |// These mapping tables conform to Unicode version ${version.value}, which is backwards compatible.
-                               |object CodePointMapping {
                                |
-                               |  private val VALID: Int = ${VALID}
-                               |  private val VALID_NV8: Int = ${VALID_NV8}
-                               |  private val VALID_XV8: Int = ${VALID_XV8}
-                               |  private val IGNORED: Int = ${IGNORED}
-                               |  private val MAPPED_MULTI_CODE_POINT = ${MAPPED_MULTI_CODE_POINT}
-                               |  private val DEVIATION = ${DEVIATION}
-                               |  private val DEVIATION_MULTI = ${DEVIATION_MULTI}
-                               |  private val DISALLOWED = ${DISALLOWED}
-                               |  private val DISALLOWED_STD3_VALID = ${DISALLOWED_STD3_VALID}
-                               |  private val DISALLOWED_STD3_MAPPED = ${DISALLOWED_STD3_MAPPED}
-                               |  private val DISALLOWED_STD3_MAPPED_MULTI = ${DISALLOWED_STD3_MAPPED_MULTI}
-                               |  private val DEVIATION_IGNORED = ${DEVIATION_IGNORED}
-                               |
-                               |  /** Map the code points in the given `String` according to the UTS-46 mapping tables
-                               |    * as described in section 5 of UTS-46. useStd3ASCIIRules is true and
-                               |    * transitionalProcessing is false.
-                               |    */
-                               |  def mapCodePoints(input: String): Either[String, String] =
-                               |    mapCodePoints(true, false)(input)
-                               |
-                               |  /** Map the code points in the given `String` according to the UTS-46 mapping tables
-                               |    * as described in section 5 of UTS-46. This is step 1 of processing an input
-                               |    *`String` according to UTS-46 for IDNA compatibility.
-                               |    *
-                               |    * @param useStd3ASCIIRules Whether or not to use STD3 ASCII rules. UTS-46 strongly recommends this be `true`.
-                               |    * @param transitionalProcessing Determines if the deviation characters should be mapped or considered valid.
-                               |    *                               From UTS-46, "Transitional Processing should only be used immediately before
-                               |    *                               a DNS lookup in the circumstances where the registry does not guarantee a
-                               |    *                               strategy of bundling or blocking. Nontransitional Processing, which is fully
-                               |    *                               compatible with IDNA2008, should be used in all other cases.
-                               |    *
-                               |    * @see [[https://www.unicode.org/reports/tr46/#IDNA_Mapping_Table UTS-46 Section 5]]
-                               |    */
-                               |  def mapCodePoints(useStd3ASCIIRules: Boolean, transitionalProcessing: Boolean)(input: String): Either[String, String] = {
-                               |    val len: Int = input.length
-                               |    var error: String = null
-                               |
-                               |    @tailrec
-                               |    def loop(acc: java.lang.StringBuilder, index: Int): java.lang.StringBuilder =
-                               |      if (index >= len) {
-                               |        acc
-                               |      } else {
-                               |        val value: Int = input.codePointAt(index)
-                               |        val indexIncrement: Int = if (value >= 0x10000) 2 else 1
-                               |        (mapCodePointSingle0(value): @switch) match {
-                               |          case ${VALID} | ${VALID_NV8} | ${VALID_XV8} => // VALID | VALID_NV8 | VALID_XV8
-                               |            loop(acc.appendCodePoint(value), index + indexIncrement)
-                               |          case ${IGNORED} => // IGNORED
-                               |            loop(acc, index + indexIncrement)
-                               |          case ${MAPPED_MULTI_CODE_POINT} => // MAPPED_MULTI_CODE_POINT
-                               |            val mapped: List[Int] = mappedMultiSingle0(value)
-                               |            if (mapped.isEmpty) {
-                               |              error = s"Invalid result when looking up code point mapping (this is a bug.): $${mapped}."
-                               |              acc
-                               |            } else {
-                               |              loop(mapped.foldLeft(acc){case (acc, value) => acc.appendCodePoint(value)}, index + indexIncrement)
-                               |            }
-                               |          case ${DEVIATION} => // DEVIATION
-                               |            if (transitionalProcessing) {
-                               |              val mapped: Int = deviationMappedSingle0(value)
-                               |              if (mapped < 0) {
-                               |                // < 0 means ignored in this case
-                               |                loop(acc, index + indexIncrement)
-                               |              } else {
-                               |                loop(acc.appendCodePoint(mapped), index + indexIncrement)
-                               |              }
-                               |            } else {
-                               |                loop(acc.appendCodePoint(value), index + indexIncrement)
-                               |            }
-                               |          case ${DEVIATION_MULTI} => // DEVIATION_MULTI
-                               |            if (transitionalProcessing) {
-                               |              val mapped: List[Int] = deviationMappedMultiSingle0(value)
-                               |              loop(mapped.foldLeft(acc){case (acc, value) => acc.appendCodePoint(value)}, index + indexIncrement)
-                               |            } else {
-                               |              loop(acc.appendCodePoint(value), index + indexIncrement)
-                               |            }
-                               |          case ${DISALLOWED} => // DISALLOWED
-                               |            error = s"Disallowed code point in input: $${value}."
-                               |            acc
-                               |          case ${DISALLOWED_STD3_VALID} => // DISALLOWED_STD3_VALID
-                               |            if (useStd3ASCIIRules) {
-                               |              error = s"Disallowed code point in input: $${value}."
-                               |              acc
-                               |            } else {
-                               |              loop(acc.appendCodePoint(value), index + indexIncrement)
-                               |            }
-                               |          case ${DISALLOWED_STD3_MAPPED} => // DISALLOWED_STD3_MAPPED
-                               |            if (useStd3ASCIIRules) {
-                               |              error = s"Disallowed code point in input: $${value}."
-                               |              acc
-                               |            } else {
-                               |              val mapped: Int = disallowedSTD3MappedSingle0(value)
-                               |              if (mapped < 0) {
-                               |                error = s"Invalid result when looking up disallowedSTD3Mapped mapping (this is a bug.): $${mapped}."
-                               |                acc
-                               |              } else {
-                               |                loop(acc.appendCodePoint(mapped), index + indexIncrement)
-                               |              }
-                               |            }
-                               |          case ${DISALLOWED_STD3_MAPPED_MULTI} => // DISALLOWED_STD3_MAPPED_MULTI
-                               |            if (useStd3ASCIIRules) {
-                               |              error = s"Disallowed code point in input: $${value}."
-                               |              acc
-                               |            } else {
-                               |              val mapped: List[Int] = disallowedSTD3MappedMultiSingle0(value)
-                               |              if (mapped.isEmpty) {
-                               |                error = s"Invalid result when looking up disallowedSTD3Mapped mapping (this is a bug.): $${mapped}."
-                               |                acc
-                               |              } else {
-                               |                loop(mapped.foldLeft(acc){case (acc, value) => acc.appendCodePoint(value)}, index + indexIncrement)
-                               |              }
-                               |            }
-                               |          case otherwise => // MAPPED or bug
-                               |            if (otherwise < 0) {
-                               |              error = s"Unexpected mapping result (this is probably a bug in idna4s): $$otherwise."
-                               |              acc
-                               |            } else {
-                               |              // This is a mapped code point
-                               |              loop(acc.appendCodePoint(otherwise), index + indexIncrement)
-                               |            }
-                               |        }
-                               |      }
-                               |
-                               |    val result: java.lang.StringBuilder = loop(new java.lang.StringBuilder(len), 0)
-                               |
-                               |    if (error eq null) {
-                               |      Right(result.toString)
-                               |    } else {
-                               |      Left(error)
-                               |    }
-                               |  }
-                               |
-                               |$developersDoc
+                               |private[uts46] trait GeneratedCodePointMapper extends CodePointMapperBase {
                                |""".stripMargin
 
       sb.append(prelude)
 
       // Generate the main mapping function
-      generateLookupTableMethods(Config.default("mapCodePoint"), rowsAsCases, sb)
+      generateLookupTableMethods(Config.default("unsafeMapIntCodePointSentinel"), rowsAsCases, sb)
 
       // Generate the secondary mapping functions
-      generateLookupTableMethods(Config.default("deviationMapped"), deviationMappedCases, sb)
-      generateLookupTableMethods(Config.default("disallowedSTD3Mapped"), disallowedSTD3MappedCases, sb)
-      generateLookupTableMethods(Config.defaultList("deviationMappedMulti"), deviationMappedMultiCases, sb)
-      generateLookupTableMethods(Config.defaultList("disallowedSTD3MappedMulti"), disallowedSTD3MappedMultiCases, sb)
-      generateLookupTableMethods(Config.defaultList("mappedMulti"), mappedMultiCases, sb)
+      generateLookupTableMethods(Config.default("unsafeLookupDeviationCodePointMapping"), deviationMappedCases, sb)
+      generateLookupTableMethods(Config.default("unsafeLookupDisallowedSTD3CodePointMapping"), disallowedSTD3MappedCases, sb)
+      generateLookupTableMethods(Config.defaultList("unsafeLookupDeviationCodePointMultiMapping"), deviationMappedMultiCases, sb)
+      generateLookupTableMethods(Config.defaultList("unsafeLookupDisallowedSTD3CodePointMultiMapping"), disallowedSTD3MappedMultiCases, sb)
+      generateLookupTableMethods(Config.defaultList("unsafeLookupCodePointMultiMapping"), mappedMultiCases, sb)
 
       sb.append("}\n").toString
     }
@@ -866,20 +716,14 @@ object UTS46IDNAMappingTable {
     *
     * @param rows The parsed rows representing the source UTS-46 lookup tables
     *        for step 1 of processing.
-    * @param packageName The package name for the generated file. This will
-    *        also be used as to create the base file name for the generated
-    *        file, but that probably doesn't matter because it is in
-    *        src_managed usually.
     *
     * @param dir The base directory that the generated file will be in.
     */
-  def generateFromRows(rows: Rows, packageName: List[String], dir: File): File = {
+  def generateFromRows(rows: Rows, dir: File): File = {
     val outputFile: File =
-      packageName.foldLeft(dir){
-        case (acc, value) => acc / value
-      } / "CodePointMapping.scala"
+      dir / "org" / "typelevel" / "idna4s" / "core" / "uts46" / "GeneratedCodePointMapper.scala"
 
-    IO.write(outputFile, rows.asSourceFile(packageName.mkString(".")))
+    IO.write(outputFile, rows.asSourceFile)
 
     outputFile
   }
@@ -887,16 +731,11 @@ object UTS46IDNAMappingTable {
   /** Download the UTS-46 lookup table sources and generate the UTS-46 lookup
     * table code. This will use the "latest" release from Unicode.
     *
-    * @param packageName The package name for the generated file. This will
-    *        also be used as to create the base file name for the generated
-    *        file, but that probably doesn't matter because it is in
-    *        src_managed usually.
-    *
     * @param dir The base directory that the generated file will be in.
     */
-  def generate(packageName: List[String])(dir: File): Seq[File] =
+  def generate(dir: File): Seq[File] =
     Rows.fromUnicodeURL.fold(
       e => throw e,
-      rows => List(generateFromRows(rows, packageName, dir))
+      rows => List(generateFromRows(rows, dir))
     )
 }

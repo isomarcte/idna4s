@@ -83,7 +83,7 @@ lazy val core = crossProject(JVMPlatform, JSPlatform, NativePlatform)
     consoleQuick / initialCommands := "",
     Compile / sourceGenerators ++= List(
       (Compile / sourceManaged).map(
-        UTS46IDNAMappingTable.generate(List("org", "typelevel", "core", "uts46"))
+        UTS46IDNAMappingTable.generate
       ).taskValue
     )
   )

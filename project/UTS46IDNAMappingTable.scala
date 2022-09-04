@@ -43,6 +43,7 @@ object UTS46IDNAMappingTable {
   val DISALLOWED_STD3_VALID = -9
   val DISALLOWED_STD3_MAPPED = -10
   val DISALLOWED_STD3_MAPPED_MULTI = -11
+  val DEVIATION_IGNORED = -12
 
   /** Newtype for a Unicode code point. */
   sealed abstract class CodePoint extends Serializable {
@@ -229,7 +230,9 @@ object UTS46IDNAMappingTable {
       */
     final case class Deviation(mapping: List[CodePoint]) extends CodePointStatus {
       override final def asCaseBody: String =
-        if (mapping.size < 2) {
+        if (mapping.isEmpty) {
+          "DEVIATION_IGNORED"
+        } else if (mapping.size < 2) {
           "DEVIATION"
         } else {
           "DEVIATION_MULTI"
@@ -616,6 +619,7 @@ object UTS46IDNAMappingTable {
                                |  private val DISALLOWED_STD3_VALID = ${DISALLOWED_STD3_VALID}
                                |  private val DISALLOWED_STD3_MAPPED = ${DISALLOWED_STD3_MAPPED}
                                |  private val DISALLOWED_STD3_MAPPED_MULTI = ${DISALLOWED_STD3_MAPPED_MULTI}
+                               |  private val DEVIATION_IGNORED = ${DEVIATION_IGNORED}
                                |
                                |  /** Map the code points in the given `String` according to the UTS-46 mapping tables
                                |    * as described in section 5 of UTS-46. useStd3ASCIIRules is true and

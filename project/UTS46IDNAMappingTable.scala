@@ -8,13 +8,15 @@ import java.net.URL
 import sbt._
 import scala.annotation.tailrec
 import scala.io.Source
-import scala.meta._
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
 import scala.util.matching._
 import scala.collection.immutable.SortedSet
 import scala.collection.immutable.SortedMap
+import treehugger.forest._
+import treehugger.forest.definitions._
+import treehugger.forest.treehuggerDSL._
 
 /** Functions for generating the UTS-46 lookup tables for step 1 of UTS-46
   * processing.
@@ -336,6 +338,38 @@ object UTS46IDNAMappingTable {
 
     implicit def orderingInstance: Ordering[Comment] = orderInstance.toOrdering
   }
+
+  val immutableCollectionPackage: Tree =
+    REF("_root_") DOT "scala" DOT "collection" DOT "immutable"
+
+  def emptyIntMap(valueType: String): Tree =
+    immutableCollectionPackage DOT "IntMap" DOT "empty" APPLYTYPE(valueType)
+
+  val emptyBitSet: Tree =
+    immutableCollectionPackage DOT "BitMap" DOT "empty"
+
+  def rangeInclusiveTree(lower: Int, upper: Int): Tree =
+    immutableCollectionPackage DOT "Range" DOT "inclusive" APPLY (LIT(lower), LIT(upper))
+
+  def asBitSet[F[_]: Foldable: Functor](fa: F[CasePattern]): Tree =
+    fa.foldMap(value =>
+      List(rangeInclusiveTree(value.lower, value.upper) DOT "foldLeft" APPLY emptyBitSet APPLY (LAMBDA(PARAM("acc"), PARAM("value")) ==> REF("acc") DOT "incl" APPLY REF("value")))
+    ) match {
+      case x :: xs =>
+        xs.foldLeft(x){
+          case (acc, value) =>
+            acc DOT "concat" APPLY value
+        }
+      case _ => emptyBitSet
+    }
+
+  def asIntMap(fa: SortedMap[CasePattern, String], valueType: String): Tree =
+    fa.foldLeft(emptyIntMap(valueType)){
+      case (acc, (casePattern, result)) =>
+        rangeInclusiveTree(casePattern.lower, casePattern.upper) DOT "foldLeft" APPLY acc APPLY (LAMBDA(PARAM("acc"), PARAM("value")) ==> REF("acc") DOT "updated" APPLY (TUPLE(REF("value"), REF(result))))
+    }
+
+  val test = treeToString(asBitSet(List(CasePattern(1, 2), CasePattern(4, 10), CasePattern(11, 100))))
 
   /** A type representing a single row parsed from the UTS-46 lookup tables.
     */

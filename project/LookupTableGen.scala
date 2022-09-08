@@ -6,15 +6,56 @@ import cats.syntax.all._
 import scala.annotation.tailrec
 import scala.collection.immutable.SortedSet
 import scala.collection.immutable.SortedMap
+import treehugger.forest._
+import treehugger.forest.definitions._
+import treehugger.forest.treehuggerDSL._
 
 object LookupTableGen {
 
-  // Why is this not in cats?
   private implicit def orderingFromOrder[A](implicit A: Order[A]): Ordering[A] =
     A.toOrdering
 
   def printAsHex(i: Int): String =
-    String.format("0x%04X", i.asInstanceOf[Object]) // Don't ask...
+    String.format("0x%04X", Integer.valueOf(i))
+
+  def inspect(flattenRangeThreshold: Int, continuityThreshold: Int, patterns: SortedSet[CasePattern]): (SortedSet[SortedSet[CasePattern]], SortedSet[CasePattern]) =
+    patterns.flatMap(pattern =>
+      if (pattern.inputCount < flattenRangeThreshold) {
+        pattern.flatten
+      } else {
+        SortedSet(pattern)
+      }
+    ).foldLeft((SortedSet.empty[CasePattern], Option.empty[Int], SortedSet.empty[SortedSet[CasePattern]], SortedSet.empty[CasePattern])){
+      case ((candidateSet, previousPattern, continuiousPatterns, otherPatterns), value) =>
+        if (value.inputCount > 1) {
+          if (candidateSet.size >= continuityThreshold) {
+            (SortedSet.empty, None, continuiousPatterns + candidateSet, otherPatterns + value)
+          } else {
+            (SortedSet.empty, None, continuiousPatterns, (otherPatterns ++ candidateSet) + value)
+          }
+        } else {
+          previousPattern.fold(
+            ((candidateSet + value), Some(value.upper), continuiousPatterns, otherPatterns)
+          )(previousPattern =>
+            if (value.upper == (previousPattern + 1)) {
+              (candidateSet + value, Some(value.upper), continuiousPatterns, otherPatterns)
+            } else {
+              if (candidateSet.size >= continuityThreshold) {
+                (SortedSet(value), Some(value.upper), continuiousPatterns + candidateSet, otherPatterns)
+              } else {
+                (SortedSet(value), Some(value.upper), continuiousPatterns, otherPatterns ++ candidateSet)
+              }
+            }
+          )
+        }
+    } match {
+      case (candidateSet, _, continuiousPatterns, otherPatterns) =>
+        if (candidateSet.size >= continuityThreshold) {
+          ((continuiousPatterns + candidateSet) - SortedSet.empty, otherPatterns)
+        } else {
+          (continuiousPatterns - SortedSet.empty, otherPatterns ++ candidateSet)
+        }
+    }
 
   final case class CasePattern(lower: Int, upper: Int) {
     assert(lower <= upper)

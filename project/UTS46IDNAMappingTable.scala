@@ -463,8 +463,50 @@ object UTS46IDNAMappingTable {
     */
   final case class Rows(
     version: UnicodeVersion,
+    valid: SortedSet[(Range, Option[IDNA2008Status], Option[Comment])],
     rows: SortedSet[Row]
   ) {
+
+    def addValid(codePointRange: Range, idna2008Status: Option[IDNA2008Status], comment: Option[Comment]): Rows =
+      this
+
+    def addIgnored(codePointRange: Range, comment: Option[Comment]): Rows =
+      this
+
+    def addMapped(codePointRange: Range, mapping: NonEmptyList[CodePoint], comment: Option[Comment]): Rows =
+      this
+
+    def addDeviation(codePointRange: Range, mapping: List[CodePoint], comment: Option[Comment]): Rows =
+      this
+
+    def addDisallowed(codePointRange: Range, comment: Option[Comment]): Rows =
+      this
+
+    def addDisallowedSTD3Valid(codePointRange: Range, comment: Option[Comment]): Rows =
+      this
+
+    def addDisallowedSTD3Mapped(codePointRange: Range, mapping: NonEmptyList[CodePoint], comment: Option[Comment]): Rows =
+      this
+
+    def addRow(codePointRange: Range, codePointStatus: CodePointStatus, comment: Option[Comment]): Rows = {
+      import CodePointStatus._
+      codePointStatus match {
+        case codePointStatus: Valid =>
+          addValid(codePointRange, codePointStatus.idna2008Status, comment)
+        case Ignored =>
+          addIgnored(codePointRange, comment)
+        case codePointStatus: Mapped =>
+          addMapped(codePointRange, codePointStatus.mapping, comment)
+        case codePointStatus: Deviation =>
+          addDeviation(codePointRange, codePointStatus.mapping, comment)
+        case Disallowed =>
+          addDisallowed(codePointRange, comment)
+        case Disallowed_STD3_Valid =>
+          addDisallowedSTD3Valid(codePointRange, comment)
+        case codePointStatus: Disallowed_STD3_Mapped =>
+          addDisallowedSTD3Mapped(codePointRange, codePointStatus.mapping, comment)
+      }
+    }
 
     /** Convert the rows into cases for the main code point mapping function.
       */
@@ -677,7 +719,7 @@ object UTS46IDNAMappingTable {
               Row.fromString(value).map(acc + _).leftMap(error =>
                 s"Error at $value: $error"
               )
-          }.map(rows => Rows(version, rows))
+          }.map(rows => Rows(version, SortedSet.empty[(Range, Option[IDNA2008Status], Option[Comment])], rows))
       }
     }
 

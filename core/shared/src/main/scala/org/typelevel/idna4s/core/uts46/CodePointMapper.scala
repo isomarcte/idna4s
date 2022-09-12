@@ -6,6 +6,8 @@ import cats.data._
 import org.typelevel.idna4s.core._
 import scala.util.control.NoStackTrace
 import java.lang.StringBuilder
+import scala.collection.immutable.IntMap
+import scala.collection.immutable.BitSet
 
 private[uts46] trait CodePointMapperBase {
   protected final val VALID: Int = -1
@@ -21,17 +23,27 @@ private[uts46] trait CodePointMapperBase {
   protected final val DISALLOWED_STD3_MAPPED_MULTI = -11
   protected final val DEVIATION_IGNORED = -12
 
-  protected def unsafeMapIntCodePointSentinel0(codePoint: Int): Int
+  protected def validAlways: BitSet
 
-  protected def unsafeLookupCodePointMultiMapping0(codePoint: Int): NonEmptyList[Int]
+  protected def validNV8: BitSet
 
-  protected def unsafeLookupDeviationCodePointMapping0(deviationCodePoint: Int): Int
+  protected def validXV8: BitSet
 
-  protected def unsafeLookupDeviationCodePointMultiMapping0(deviationCodePoint: Int): NonEmptyList[Int]
+  protected def ignored: BitSet
 
-  protected def unsafeLookupDisallowedSTD3CodePointMapping0(disallowedSTD3CodePoint: Int): Int
+  protected def mappedMultiCodePoints: IntMap[NonEmptyList[Int]]
 
-  protected def unsafeLookupDisallowedSTD3CodePointMultiMapping0(disallowedSTD3CodePoint: Int): NonEmptyList[Int]
+  protected def deviationMapped: IntMap[Int]
+
+  protected def deviationMultiMapped: IntMap[NonEmptyList[Int]]
+
+  protected def disallowed: BitSet
+
+  protected def disallowedSTD3Valid: BitSet
+
+  protected def disallowedSTD3Mapped: IntMap[NonEmptyList[Int]]
+
+  protected def deviationIgnored: BitSet
 }
 
 object CodePointMapper extends GeneratedCodePointMapper {

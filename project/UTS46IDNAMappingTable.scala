@@ -47,6 +47,74 @@ object UTS46IDNAMappingTable {
   val DISALLOWED_STD3_MAPPED_MULTI = -11
   val DEVIATION_IGNORED = -12
 
+  private[this] implicit def orphanOrderingForNonEmptyList[A: Order]: Ordering[NonEmptyList[A]] =
+    Order[NonEmptyList[A]].toOrdering
+
+  private[this] implicit def orphanOrderingForList[A: Order]: Ordering[List[A]] =
+    Order[List[A]].toOrdering
+
+  sealed abstract class CodePointRange extends Serializable {
+    def lower: CodePoint
+    def upper: CodePoint
+
+    // final //
+
+    final def size: Int = upper.value - lower.value + 1
+
+    override final def toString: String = s"CodePointRange($lower, $upper)"
+  }
+
+  object CodePointRange {
+    private[this] final case class CodePointRangeImpl(override val lower: CodePoint, override val upper: CodePoint) extends CodePointRange
+
+    def apply(value: CodePoint): CodePointRange =
+      CodePointRangeImpl(value, value)
+
+    def from(lower: CodePoint, upper: CodePoint): Either[String, CodePointRange] =
+      if (lower <= upper) {
+        Right(CodePointRangeImpl(lower, upper))
+      } else {
+        Left(s"Invalid CodePointRange, lower must be <= upper: [$lower, $upper]")
+      }
+
+    def fromInt(value: Int): Either[String, CodePointRange] =
+      CodePoint.fromInt(value).map(apply)
+
+    def fromInts(lower: Int, upper: Int): Either[String, CodePointRange] =
+      for {
+        lower <- CodePoint.fromInt(lower)
+        upper <- CodePoint.fromInt(upper)
+        result <- from(lower, upper)
+      } yield result
+
+    def unsafeFromInts(lower: Int, upper: Int): CodePointRange =
+      fromInts(lower, upper).fold(
+        e => throw new IllegalArgumentException(e),
+        identity
+      )
+
+    def fromHexString(value: String): Either[String, CodePointRange] =
+      CodePoint.fromHexString(value).map(apply)
+
+    def fromHexStrings(lower: String, upper: String): Either[String, CodePointRange] =
+      for {
+        lower <- CodePoint.fromHexString(lower)
+        upper <- CodePoint.fromHexString(upper)
+        result <- from(lower, upper)
+      } yield result
+
+    implicit val orderAndHashForCodePointRange: Order[CodePointRange] with Hash[CodePointRange] =
+      new Order[CodePointRange] with Hash[CodePointRange] {
+        override def hash(x: CodePointRange): Int = x.hashCode
+
+        override def compare(x: CodePointRange, y: CodePointRange): Int =
+          (x.lower, x.upper).compare((y.lower, y.upper))
+      }
+
+    implicit def orderingInstance: Ordering[CodePointRange] =
+      orderAndHashForCodePointRange.toOrdering
+  }
+
   /** Newtype for a Unicode code point. */
   sealed abstract class CodePoint extends Serializable {
     def value: Int
@@ -70,8 +138,22 @@ object UTS46IDNAMappingTable {
         Right(CodePointImpl(value))
       }
 
+    def fromHexString(value: String): Either[String, CodePoint] = {
+      val trimmed: String = value.trim.toLowerCase
+      val integralValue: Either[Throwable, Int] =
+        if (trimmed.startsWith("0x")) {
+          Either.catchNonFatal(Integer.parseInt(trimmed.drop(2), 16))
+        } else {
+          Either.catchNonFatal(Integer.parseInt(trimmed, 16))
+        }
+      integralValue.leftMap(_.getLocalizedMessage).flatMap(fromInt)
+    }
+
     implicit val orderInstance: Order[CodePoint] =
       Order.by(_.value)
+
+    implicit def orderingInstance: Ordering[CodePoint] =
+      orderInstance.toOrdering
   }
 
   /** Newtype for a Unicode version string. */
@@ -348,12 +430,12 @@ object UTS46IDNAMappingTable {
   val emptyBitSet: Tree =
     immutableCollectionPackage DOT "BitMap" DOT "empty"
 
-  def rangeInclusiveTree(lower: Int, upper: Int): Tree =
-    immutableCollectionPackage DOT "Range" DOT "inclusive" APPLY (LIT(lower), LIT(upper))
+  def rangeInclusiveTree(codePointRange: CodePointRange): Tree =
+    immutableCollectionPackage DOT "Range" DOT "inclusive" APPLY (LIT(codePointRange.lower.value), LIT(codePointRange.upper.value))
 
-  def asBitSet[F[_]: Foldable: Functor](fa: F[CasePattern]): Tree =
+  def asBitSet[F[_]: Foldable: Functor](fa: F[CodePointRange]): Tree =
     fa.foldMap(value =>
-      List(rangeInclusiveTree(value.lower, value.upper) DOT "foldLeft" APPLY emptyBitSet APPLY (LAMBDA(PARAM("acc"), PARAM("value")) ==> REF("acc") DOT "incl" APPLY REF("value")))
+      List(rangeInclusiveTree(value) DOT "foldLeft" APPLY emptyBitSet APPLY (LAMBDA(PARAM("acc"), PARAM("value")) ==> REF("acc") DOT "incl" APPLY REF("value")))
     ) match {
       case x :: xs =>
         xs.foldLeft(x){
@@ -363,38 +445,33 @@ object UTS46IDNAMappingTable {
       case _ => emptyBitSet
     }
 
-  def asIntMap(fa: SortedMap[CasePattern, String], valueType: String): Tree =
-    fa.foldLeft(emptyIntMap(valueType)){
-      case (acc, (casePattern, result)) =>
-        rangeInclusiveTree(casePattern.lower, casePattern.upper) DOT "foldLeft" APPLY acc APPLY (LAMBDA(PARAM("acc"), PARAM("value")) ==> REF("acc") DOT "updated" APPLY (TUPLE(REF("value"), REF(result))))
+  def asIntMap(fa: SortedMap[CodePointRange, String], valueType: String): Tree =
+    fa.foldLeft(List.empty[Tree]){
+      case (acc, (codePointRange, result)) =>
+        (rangeInclusiveTree(codePointRange) DOT "foldLeft" APPLY emptyIntMap(valueType) APPLY (LAMBDA(PARAM("acc"), PARAM("value")) ==> REF("acc") DOT "updated" APPLY (TUPLE(REF("value"), REF(result))))) +: acc
+    } match {
+      case x :: xs =>
+        xs.foldLeft(x){
+          case (acc, value) =>
+            acc DOT "concat" APPLY value
+        }
+      case _ =>
+        emptyIntMap(valueType)
     }
-
-  val test = treeToString(asBitSet(List(CasePattern(1, 2), CasePattern(4, 10), CasePattern(11, 100))))
 
   /** A type representing a single row parsed from the UTS-46 lookup tables.
     */
   final case class Row(
-    casePattern: CasePattern,
+    codePointRange: CodePointRange,
     codePointStatus: CodePointStatus,
     comment: Option[Comment]
-  ) {
-
-    /** Convert a row into the case pattern and result string for the main code
-      * point mapping function.
-      */
-    def asCase: (CasePattern, String) =
-      comment.fold(
-        (casePattern -> s"${codePointStatus.asCaseBody}\n")
-      )(comment =>
-        (casePattern -> s"${codePointStatus.asCaseBody} // ${comment.value}\n")
-      )
-  }
+  )
 
   object Row {
     implicit val orderInstance: Order[Row] =
       new Order[Row] {
         override def compare(x: Row, y: Row): Int =
-          x.casePattern.compare(y.casePattern) match {
+          x.codePointRange.compare(y.codePointRange) match {
             case 0 =>
               x.codePointStatus.compare(y.codePointStatus) match {
                 case 0 =>
@@ -408,8 +485,8 @@ object UTS46IDNAMappingTable {
 
     implicit def orderingInstance: Ordering[Row] = orderInstance.toOrdering
 
-    def apply(casePattern: CasePattern, codePointStatus: CodePointStatus, comment: Comment): Row =
-      Row(casePattern, codePointStatus, Some(comment))
+    def apply(codePointRange: CodePointRange, codePointStatus: CodePointStatus, comment: Comment): Row =
+      Row(codePointRange, codePointStatus, Some(comment))
 
     // Regexes used to extract out a single input code point or a range of
     // input code points.
@@ -419,14 +496,14 @@ object UTS46IDNAMappingTable {
       """([0-9A-Fa-f]{1,6})""".r
 
     /** Give an input code point string (the first column in the UTS-46 lookup
-      * table), attempt to parse it into a `CasePattern`.
+      * table), attempt to parse it into a `CodePointRange`.
       */
-    def parseInputCodePoints(value: String): Either[String, CasePattern] =
+    def parseInputCodePoints(value: String): Either[String, CodePointRange] =
       value.trim match {
         case rangeRegex(lower, upper) =>
-          CasePattern.fromHexStrings(lower, upper)
+          CodePointRange.fromHexStrings(lower, upper)
         case singleRegex(value) =>
-          CasePattern.fromHexString(value)
+          CodePointRange.fromHexString(value)
         case _ =>
           Left(s"Unable to parse as code points: ${value}")
       }
@@ -463,32 +540,49 @@ object UTS46IDNAMappingTable {
     */
   final case class Rows(
     version: UnicodeVersion,
-    valid: SortedSet[(Range, Option[IDNA2008Status], Option[Comment])],
-    rows: SortedSet[Row]
+    validAlways: SortedSet[(CodePointRange, Option[Comment])],
+    validNV8: SortedSet[(CodePointRange, Option[Comment])],
+    validXV8: SortedSet[(CodePointRange, Option[Comment])],
+    ignored: SortedSet[(CodePointRange, Option[Comment])],
+    mapped: SortedSet[(CodePointRange, NonEmptyList[CodePoint], Option[Comment])],
+    deviation: SortedSet[(CodePointRange, List[CodePoint], Option[Comment])],
+    disallowed: SortedSet[(CodePointRange, Option[Comment])],
+    disallowedSTD3Valid: SortedSet[(CodePointRange, Option[Comment])],
+    disallowedSTD3Mapped: SortedSet[(CodePointRange, NonEmptyList[CodePoint], Option[Comment])]
   ) {
 
-    def addValid(codePointRange: Range, idna2008Status: Option[IDNA2008Status], comment: Option[Comment]): Rows =
-      this
+    def addValid(codePointRange: CodePointRange, idna2008Status: Option[IDNA2008Status], comment: Option[Comment]): Rows =
+      idna2008Status.fold(
+        this.copy(validAlways = validAlways + ((codePointRange, comment)))
+      ){
+        case IDNA2008Status.NV8 =>
+          this.copy(validNV8 = validNV8 + ((codePointRange, comment)))
+        case IDNA2008Status.XV8 =>
+          this.copy(validXV8 = validXV8 + ((codePointRange, comment)))
+      }
 
-    def addIgnored(codePointRange: Range, comment: Option[Comment]): Rows =
-      this
+    def addIgnored(codePointRange: CodePointRange, comment: Option[Comment]): Rows =
+      this.copy(ignored = ignored + ((codePointRange, comment)))
 
-    def addMapped(codePointRange: Range, mapping: NonEmptyList[CodePoint], comment: Option[Comment]): Rows =
-      this
+    def addMapped(codePointRange: CodePointRange, mapping: NonEmptyList[CodePoint], comment: Option[Comment]): Rows =
+      this.copy(mapped = mapped + ((codePointRange, mapping, comment)))
 
-    def addDeviation(codePointRange: Range, mapping: List[CodePoint], comment: Option[Comment]): Rows =
-      this
+    def addDeviation(codePointRange: CodePointRange, mapping: List[CodePoint], comment: Option[Comment]): Rows =
+      this.copy(deviation = deviation + ((codePointRange, mapping, comment)))
 
-    def addDisallowed(codePointRange: Range, comment: Option[Comment]): Rows =
-      this
+    def addDisallowed(codePointRange: CodePointRange, comment: Option[Comment]): Rows =
+      this.copy(disallowed = disallowed + ((codePointRange, comment)))
 
-    def addDisallowedSTD3Valid(codePointRange: Range, comment: Option[Comment]): Rows =
-      this
+    def addDisallowedSTD3Valid(codePointRange: CodePointRange, comment: Option[Comment]): Rows =
+      this.copy(disallowedSTD3Valid = disallowedSTD3Valid + ((codePointRange, comment)))
 
-    def addDisallowedSTD3Mapped(codePointRange: Range, mapping: NonEmptyList[CodePoint], comment: Option[Comment]): Rows =
-      this
+    def addDisallowedSTD3Mapped(codePointRange: CodePointRange, mapping: NonEmptyList[CodePoint], comment: Option[Comment]): Rows =
+      this.copy(disallowedSTD3Mapped = disallowedSTD3Mapped + ((codePointRange, mapping, comment)))
 
-    def addRow(codePointRange: Range, codePointStatus: CodePointStatus, comment: Option[Comment]): Rows = {
+    def addRow(row: Row): Rows =
+      addRow(row.codePointRange, row.codePointStatus, row.comment)
+
+    def addRow(codePointRange: CodePointRange, codePointStatus: CodePointStatus, comment: Option[Comment]): Rows = {
       import CodePointStatus._
       codePointStatus match {
         case codePointStatus: Valid =>
@@ -508,181 +602,45 @@ object UTS46IDNAMappingTable {
       }
     }
 
-    /** Convert the rows into cases for the main code point mapping function.
-      */
-    def rowsAsCases: SortedMap[CasePattern, String] = {
-      rows.foldLeft(SortedMap.empty[CasePattern, String]){
-        case (acc, row) =>
-          acc + row.asCase
-      }
-    }
+    def asSourceTree: Tree =
+      CLASSDEF("GeneratedCodePointMapper").withFlags(Flags.ABSTRACT).withFlags(PRIVATEWITHIN("uts46")).withParents("CodePointMapperBase") := Block(
 
-    /** Convert rows which represent code points which map to more than one output
-      * code point into the appropriate case form for the secondary function
-      * to lookup the code point mappings.
-      *
-      * For example, if a code point maps to a more than one output code
-      * point, then the sentinel value MAPPED_MULTI_CODE_POINT is
-      * returned. This is to avoid boxing in the common case where a code
-      * point maps to exactly one output code point. When the sentinel value
-      * MAPPED_MULTI_CODE_POINT is returned, then a secondary function is
-      * called to lookup the List of output code points. This function
-      * generates the cases for that secondary lookup table.
-      */
-    def mappedMultiCases: SortedMap[CasePattern, String] = {
-      rows.foldLeft(SortedMap.empty[CasePattern, String]){
-        case (acc, row) =>
-          row.codePointStatus match {
-            case CodePointStatus.Mapped(a) if a.size > 1 =>
-              val commentString: String =
-                row.comment.fold(
-                  ""
-                )(comment =>
-                  s"// ${comment.value}"
-                )
-              acc + (row.casePattern -> s"""NonEmptyList.of(${a.map(a => printAsHex(a.value)).mkString_(", ")}) ${commentString}${"\n"}""")
-            case _ =>
-              acc
-          }
-      }
-    }
-
-    /** Convert rows which represent code points which map a single deviation code
-      * point into the appropriate case form for the secondary function to
-      * lookup these code point mappings.
-      *
-      * For example, if a code point maps to a single deviation code point,
-      * then the sentinel value DEVIATION is returned. In the event that
-      * `transitionalProcessing` is enabled then the code point is mapped and
-      * a secondary function will be called to lookup that mapping. This
-      * function generates the cases for that function.
-      */
-    def deviationMappedCases: SortedMap[CasePattern, String] = {
-      rows.foldLeft(SortedMap.empty[CasePattern, String]){
-        case (acc, row) =>
-          row.codePointStatus match {
-            case CodePointStatus.Deviation(List(mapping)) =>
-              val commentString: String =
-                row.comment.fold(
-                  ""
-                )(comment =>
-                  s"// ${comment.value}"
-                )
-              acc + (row.casePattern -> s"${printAsHex(mapping.value)} ${commentString}\n")
-            case _ =>
-              acc
-          }
-      }
-    }
-
-    /** As [[#deviationMappedCases]], but for deviation code points which map to
-      * ''more than one'' output code point. These are signaled by the
-      * sentinel value DEVIATION_MULTI. The distinction is made so that the
-      * deviation code points which map to a single output code point can just
-      * return an `Int`, rather than a `List[Int]`, to avoid boxing.
-      */
-    def deviationMappedMultiCases: SortedMap[CasePattern, String] = {
-      rows.foldLeft(SortedMap.empty[CasePattern, String]){
-        case (acc, row) =>
-          row.codePointStatus match {
-            case CodePointStatus.Deviation(l) if l.size > 1 =>
-              val commentString: String =
-                row.comment.fold(
-                  ""
-                )(comment =>
-                  s"// ${comment.value}"
-                )
-              acc + (row.casePattern -> s"""NonEmptyList.of(${l.map(a => printAsHex(a.value)).mkString(", ")}) ${commentString}${"\n"}""")
-            case _ =>
-              acc
-          }
-      }
-    }
-
-    /** Convert rows which represent code points which map to a single output code
-      * point when UseSTD3ASCIIRules is false into the appropriate case form
-      * for the secondary lookup function.
-      *
-      * For example, UseSTD3ASCIIRules is false and the sentinel
-      * DISALLOWED_STD3_MAPPED value is returned from the main mapping
-      * function, then the secondary function generated from these rows will be
-      * called to lookup that mapping.
-      */
-    def disallowedSTD3MappedCases: SortedMap[CasePattern, String] = {
-      rows.foldLeft(SortedMap.empty[CasePattern, String]){
-        case (acc, row) =>
-          row.codePointStatus match {
-            case CodePointStatus.Disallowed_STD3_Mapped(mapping) if mapping.size === 1 =>
-              val commentString: String =
-                row.comment.fold(
-                  ""
-                )(comment =>
-                  s"// ${comment.value}"
-                )
-              acc + (row.casePattern -> s"${printAsHex(mapping.head.value)} ${commentString}\n")
-            case _ =>
-              acc
-          }
-      }
-    }
-
-    /** As [[#disallowedSTD3Mapped]] but for code points which map to multiple
-      * output code points. These are signaled by the sentinel value
-      * DISALLOWED_STD3_MAPPED_MULTI. The distinction is made to permit the
-      * secondary function for these code points which map to a single output
-      * code point to return `Int`, as opposed to `List[Int]`, and avoid a
-      * layer of boxing.
-      */
-    def disallowedSTD3MappedMultiCases: SortedMap[CasePattern, String] = {
-      rows.foldLeft(SortedMap.empty[CasePattern, String]){
-        case (acc, row) =>
-          row.codePointStatus match {
-            case CodePointStatus.Disallowed_STD3_Mapped(a) if a.size > 1 =>
-              val commentString: String =
-                row.comment.fold(
-                  ""
-                )(comment =>
-                  s"// ${comment.value}"
-                )
-              acc + (row.casePattern -> s"""NonEmptyList.of(${a.map(a => printAsHex(a.value)).mkString_(", ")}) ${commentString}${"\n"}""")
-            case _ =>
-              acc
-          }
-      }
-    }
+      )
 
     /** Given a package name, generate the `String` content of the generated
       * source file.
       */
-    def asSourceFile: String = {
-      // Approximately 9000 lines in the 14.0.0 version
-      val sb: StringBuilder = new StringBuilder(9000 * 3)
+    def asSourceFile: String = ???
 
-      val prelude: String = s"""package org.typelevel.idna4s.core.uts46
-                               |
-                               |import scala.annotation.switch
-                               |import cats.data._
-                               |
-                               |// THIS FILE IS GENERATED, DO NOT MODIFY BY HAND
-                               |// These mapping tables conform to Unicode version ${version.value}, which is backwards compatible.
-                               |
-                               |private[uts46] trait GeneratedCodePointMapper extends CodePointMapperBase {
-                               |""".stripMargin
+// {
+//       // Approximately 9000 lines in the 14.0.0 version
+//       val sb: StringBuilder = new StringBuilder(9000 * 3)
 
-      sb.append(prelude)
+//       val prelude: String = s"""package org.typelevel.idna4s.core.uts46
+//                                |
+//                                |import scala.annotation.switch
+//                                |import cats.data._
+//                                |
+//                                |// THIS FILE IS GENERATED, DO NOT MODIFY BY HAND
+//                                |// These mapping tables conform to Unicode version ${version.value}, which is backwards compatible.
+//                                |
+//                                |private[uts46] trait GeneratedCodePointMapper extends CodePointMapperBase {
+//                                |""".stripMargin
 
-      // Generate the main mapping function
-      generateLookupTableMethods(Config.default("unsafeMapIntCodePointSentinel"), rowsAsCases, sb)
+//       sb.append(prelude)
 
-      // Generate the secondary mapping functions
-      generateLookupTableMethods(Config.default("unsafeLookupDeviationCodePointMapping"), deviationMappedCases, sb)
-      generateLookupTableMethods(Config.default("unsafeLookupDisallowedSTD3CodePointMapping"), disallowedSTD3MappedCases, sb)
-      generateLookupTableMethods(Config.defaultList("unsafeLookupDeviationCodePointMultiMapping"), deviationMappedMultiCases, sb)
-      generateLookupTableMethods(Config.defaultList("unsafeLookupDisallowedSTD3CodePointMultiMapping"), disallowedSTD3MappedMultiCases, sb)
-      generateLookupTableMethods(Config.defaultList("unsafeLookupCodePointMultiMapping"), mappedMultiCases, sb)
+//       // Generate the main mapping function
+//       generateLookupTableMethods(Config.default("unsafeMapIntCodePointSentinel"), rowsAsCases, sb)
 
-      sb.append("}\n").toString
-    }
+//       // Generate the secondary mapping functions
+//       generateLookupTableMethods(Config.default("unsafeLookupDeviationCodePointMapping"), deviationMappedCases, sb)
+//       generateLookupTableMethods(Config.default("unsafeLookupDisallowedSTD3CodePointMapping"), disallowedSTD3MappedCases, sb)
+//       generateLookupTableMethods(Config.defaultList("unsafeLookupDeviationCodePointMultiMapping"), deviationMappedMultiCases, sb)
+//       generateLookupTableMethods(Config.defaultList("unsafeLookupDisallowedSTD3CodePointMultiMapping"), disallowedSTD3MappedMultiCases, sb)
+//       generateLookupTableMethods(Config.defaultList("unsafeLookupCodePointMultiMapping"), mappedMultiCases, sb)
+
+//       sb.append("}\n").toString
+//     }
   }
 
   object Rows {
@@ -690,6 +648,20 @@ object UTS46IDNAMappingTable {
     // Regex for parsing the unicode version string from the file.
     val unicodeVersionRegex: Regex =
       """#\s*Version:\s*(\d+\.\d+\.\d+)""".r
+
+    def empty(version: UnicodeVersion): Rows =
+      Rows(
+        version,
+        SortedSet.empty,
+        SortedSet.empty,
+        SortedSet.empty,
+        SortedSet.empty,
+        SortedSet.empty,
+        SortedSet.empty,
+        SortedSet.empty,
+        SortedSet.empty,
+        SortedSet.empty
+      )
 
     /** Parse the rows from a list of lines. */
     def fromLines(lines: List[String]): Either[String, Rows] = {
@@ -712,14 +684,14 @@ object UTS46IDNAMappingTable {
         case Left(error) => Left(error)
         case Right((version, rest)) =>
           // Drop comments after parsing the version
-          rest.dropWhile(_.startsWith("#")).foldM[F, SortedSet[Row]](SortedSet.empty[Row]){
+          rest.dropWhile(_.startsWith("#")).foldM[F, Rows](Rows.empty(version)){
             case (acc, value) if value.trim.isEmpty || value.trim.startsWith("#") =>
               Right(acc)
             case (acc, value) =>
-              Row.fromString(value).map(acc + _).leftMap(error =>
+              Row.fromString(value).map(acc.addRow).leftMap(error =>
                 s"Error at $value: $error"
               )
-          }.map(rows => Rows(version, SortedSet.empty[(Range, Option[IDNA2008Status], Option[Comment])], rows))
+          }
       }
     }
 

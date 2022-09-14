@@ -44,6 +44,8 @@ private[uts46] trait CodePointMapperBase {
   protected def disallowedSTD3Mapped: IntMap[NonEmptyList[Int]]
 
   protected def deviationIgnored: BitSet
+
+  protected def mapped: IntMap[Int]
 }
 
 object CodePointMapper extends GeneratedCodePointMapper {

@@ -421,8 +421,26 @@ object UTS46IDNAMappingTable {
     implicit def orderingInstance: Ordering[Comment] = orderInstance.toOrdering
   }
 
-  val immutableCollectionPackage: Tree =
+  private val immutableCollectionPackage: Tree =
     REF("_root_") DOT "scala" DOT "collection" DOT "immutable"
+
+  private val bitSetType: Tree =
+    immutableCollectionPackage DOT "BitSet"
+
+  private def intMapType(valueType: Tree): Tree =
+    immutableCollectionPackage DOT "IntMap" APPLYTYPE(valueType)
+
+  private def nelType(valueType: Tree): Tree =
+    REF("_root") DOT "cats" DOT "data" DOT "NonEmptyList" APPLYTYPE(valueType)
+
+  private val intMapOfIntType: Tree =
+    intMapType(IntClass)
+
+  private val intMapOfNELOfIntType: Tree =
+    intMapType(nelType(IntClass))
+
+  private val nelOfIntType: Tree =
+    nelType(IntClass)
 
   def emptyIntMap(valueType: String): Tree =
     immutableCollectionPackage DOT "IntMap" DOT "empty" APPLYTYPE(valueType)
@@ -544,7 +562,8 @@ object UTS46IDNAMappingTable {
     validNV8: SortedSet[(CodePointRange, Option[Comment])],
     validXV8: SortedSet[(CodePointRange, Option[Comment])],
     ignored: SortedSet[(CodePointRange, Option[Comment])],
-    mapped: SortedSet[(CodePointRange, NonEmptyList[CodePoint], Option[Comment])],
+    mapped: SortedSet[(CodePointRange, CodePoint, Option[Comment])],
+    mappedMulti: SortedSet[(CodePointRange, NonEmptyList[CodePoint], Option[Comment])],
     deviation: SortedSet[(CodePointRange, List[CodePoint], Option[Comment])],
     disallowed: SortedSet[(CodePointRange, Option[Comment])],
     disallowedSTD3Valid: SortedSet[(CodePointRange, Option[Comment])],
@@ -565,7 +584,11 @@ object UTS46IDNAMappingTable {
       this.copy(ignored = ignored + ((codePointRange, comment)))
 
     def addMapped(codePointRange: CodePointRange, mapping: NonEmptyList[CodePoint], comment: Option[Comment]): Rows =
-      this.copy(mapped = mapped + ((codePointRange, mapping, comment)))
+      if (mapping.size > 1) {
+        this.copy(mappedMulti = mappedMulti + ((codePointRange, mapping, comment)))
+      } else {
+        this.copy(mapped = mapped + ((codePointRange, mapping.head, comment)))
+      }
 
     def addDeviation(codePointRange: CodePointRange, mapping: List[CodePoint], comment: Option[Comment]): Rows =
       this.copy(deviation = deviation + ((codePointRange, mapping, comment)))
@@ -602,9 +625,22 @@ object UTS46IDNAMappingTable {
       }
     }
 
-    def asSourceTree: Tree =
-      CLASSDEF("GeneratedCodePointMapper").withFlags(Flags.ABSTRACT).withFlags(PRIVATEWITHIN("uts46")).withParents("CodePointMapperBase") := Block(
+    def asSourceTree: Tree = {
+      val valFlags: SortedSet[Long] = SortedSet(Flags.FINAL, Flags.OVERRIDE, Flags.PROTECTED)
+      def bitSetMethod(name: String, codePointRanges: SortedSet[CodePointRange]): Tree =
+        VAL(name, bitSetType).withFlags(flags: _*) := asBitSet(codePointRanges.toList)
 
+      def intMapMethod(name: String, mapValueType: String, codePointRangeMap: SortedMap[CodePointRange, String]): Tree =
+        VAL(name, intMapType(mapValueType)).withFlags(flags: _*) := asIntMap(codePointRangeMap, mapValueType)
+
+      CLASSDEF("GeneratedCodePointMapper").withFlags(Flags.ABSTRACT).withFlags(PRIVATEWITHIN("uts46")).withParents("CodePointMapperBase") := Block(
+        bitSetMethod("validAlways", validAlways.map(_._1)),
+        bitSetMethod("validNV8", validNV8.map(_._1)),
+        bitSetMethod("validXV8", validXV8.map(_._1)),
+        bitSetMethod("ignored", ignored.map(_._1)),
+        bitSetMethod("disallowed", disallowed.map(_._1)),
+        bitSetMethod("deviationIgnored", deviationIgnored.map(_._1)),
+        intMapMethod("mappedMultiCodePoints", nelOfIntType)
       )
 
     /** Given a package name, generate the `String` content of the generated
@@ -652,6 +688,7 @@ object UTS46IDNAMappingTable {
     def empty(version: UnicodeVersion): Rows =
       Rows(
         version,
+        SortedSet.empty,
         SortedSet.empty,
         SortedSet.empty,
         SortedSet.empty,

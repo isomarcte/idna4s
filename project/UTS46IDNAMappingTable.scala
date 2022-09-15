@@ -424,26 +424,32 @@ object UTS46IDNAMappingTable {
   private val immutableCollectionPackage: Tree =
     REF("_root_") DOT "scala" DOT "collection" DOT "immutable"
 
-  private val bitSetType: Tree =
-    immutableCollectionPackage DOT "BitSet"
+  private val bitSetType: Type =
+    TYPE_REF(immutableCollectionPackage DOT "BitSet")
 
-  private def intMapType(valueType: Tree): Tree =
-    immutableCollectionPackage DOT "IntMap" APPLYTYPE(valueType)
+  private def intMapType(valueType: Type): Type =
+    TYPE_REF(immutableCollectionPackage DOT "IntMap" APPLYTYPE(valueType))
 
-  private def nelType(valueType: Tree): Tree =
-    REF("_root") DOT "cats" DOT "data" DOT "NonEmptyList" APPLYTYPE(valueType)
+  private val nelPrefix: Tree =
+    REF("_root_") DOT "cats" DOT "data" DOT "NonEmptyList"
 
-  private val intMapOfIntType: Tree =
+  private def nelType(valueType: Type): Type =
+    TYPE_REF(nelPrefix) TYPE_OF valueType
+
+  private val intMapOfIntType: Type =
     intMapType(IntClass)
 
-  private val intMapOfNELOfIntType: Tree =
+  private val intMapOfNELOfIntType: Type =
     intMapType(nelType(IntClass))
 
-  private val nelOfIntType: Tree =
+  private val nelOfIntType: Type =
     nelType(IntClass)
 
-  def emptyIntMap(valueType: String): Tree =
+  private def emptyIntMap(valueType: Type): Tree =
     immutableCollectionPackage DOT "IntMap" DOT "empty" APPLYTYPE(valueType)
+
+  private def nelToTree(value: NonEmptyList[Int]): Tree =
+    nelPrefix DOT "of" APPLY(value.toList.map(LIT(_)): _*)
 
   val emptyBitSet: Tree =
     immutableCollectionPackage DOT "BitMap" DOT "empty"
@@ -463,10 +469,10 @@ object UTS46IDNAMappingTable {
       case _ => emptyBitSet
     }
 
-  def asIntMap(fa: SortedMap[CodePointRange, String], valueType: String): Tree =
+  def asIntMap(fa: SortedMap[CodePointRange, Tree], valueType: Type): Tree =
     fa.foldLeft(List.empty[Tree]){
       case (acc, (codePointRange, result)) =>
-        (rangeInclusiveTree(codePointRange) DOT "foldLeft" APPLY emptyIntMap(valueType) APPLY (LAMBDA(PARAM("acc"), PARAM("value")) ==> REF("acc") DOT "updated" APPLY (TUPLE(REF("value"), REF(result))))) +: acc
+        (rangeInclusiveTree(codePointRange) DOT "foldLeft" APPLY emptyIntMap(valueType) APPLY (LAMBDA(PARAM("acc"), PARAM("value")) ==> REF("acc") DOT "updated" APPLY (TUPLE(REF("value"), result)))) +: acc
     } match {
       case x :: xs =>
         xs.foldLeft(x){
@@ -558,16 +564,18 @@ object UTS46IDNAMappingTable {
     */
   final case class Rows(
     version: UnicodeVersion,
-    validAlways: SortedSet[(CodePointRange, Option[Comment])],
-    validNV8: SortedSet[(CodePointRange, Option[Comment])],
-    validXV8: SortedSet[(CodePointRange, Option[Comment])],
+    deviationIgnored: SortedSet[(CodePointRange, Option[Comment])],
+    deviationMapped: SortedSet[(CodePointRange, CodePoint, Option[Comment])],
+    deviationMultiMapped: SortedSet[(CodePointRange, NonEmptyList[CodePoint], Option[Comment])],
+    disallowed: SortedSet[(CodePointRange, Option[Comment])],
+    disallowedSTD3Mapped: SortedSet[(CodePointRange, NonEmptyList[CodePoint], Option[Comment])],
+    disallowedSTD3Valid: SortedSet[(CodePointRange, Option[Comment])],
     ignored: SortedSet[(CodePointRange, Option[Comment])],
     mapped: SortedSet[(CodePointRange, CodePoint, Option[Comment])],
     mappedMulti: SortedSet[(CodePointRange, NonEmptyList[CodePoint], Option[Comment])],
-    deviation: SortedSet[(CodePointRange, List[CodePoint], Option[Comment])],
-    disallowed: SortedSet[(CodePointRange, Option[Comment])],
-    disallowedSTD3Valid: SortedSet[(CodePointRange, Option[Comment])],
-    disallowedSTD3Mapped: SortedSet[(CodePointRange, NonEmptyList[CodePoint], Option[Comment])]
+    validAlways: SortedSet[(CodePointRange, Option[Comment])],
+    validNV8: SortedSet[(CodePointRange, Option[Comment])],
+    validXV8: SortedSet[(CodePointRange, Option[Comment])]
   ) {
 
     def addValid(codePointRange: CodePointRange, idna2008Status: Option[IDNA2008Status], comment: Option[Comment]): Rows =
@@ -591,7 +599,14 @@ object UTS46IDNAMappingTable {
       }
 
     def addDeviation(codePointRange: CodePointRange, mapping: List[CodePoint], comment: Option[Comment]): Rows =
-      this.copy(deviation = deviation + ((codePointRange, mapping, comment)))
+      mapping match {
+        case x :: Nil =>
+          this.copy(deviationMapped = deviationMapped + ((codePointRange, x, comment)))
+        case x :: xs =>
+          this.copy(deviationMultiMapped = deviationMultiMapped + ((codePointRange, NonEmptyList(x, xs), comment)))
+        case _ =>
+          this.copy(deviationIgnored = deviationIgnored + ((codePointRange, comment)))
+      }
 
     def addDisallowed(codePointRange: CodePointRange, comment: Option[Comment]): Rows =
       this.copy(disallowed = disallowed + ((codePointRange, comment)))
@@ -625,13 +640,13 @@ object UTS46IDNAMappingTable {
       }
     }
 
-    def asSourceTree: Tree = {
-      val valFlags: SortedSet[Long] = SortedSet(Flags.FINAL, Flags.OVERRIDE, Flags.PROTECTED)
+    private def asSourceTree: Tree = {
+      val valFlags: List[Long] = SortedSet[Long](Flags.FINAL, Flags.OVERRIDE, Flags.PROTECTED).toList
       def bitSetMethod(name: String, codePointRanges: SortedSet[CodePointRange]): Tree =
-        VAL(name, bitSetType).withFlags(flags: _*) := asBitSet(codePointRanges.toList)
+        VAL(name, bitSetType).withFlags(valFlags: _*) := asBitSet(codePointRanges.toList)
 
-      def intMapMethod(name: String, mapValueType: String, codePointRangeMap: SortedMap[CodePointRange, String]): Tree =
-        VAL(name, intMapType(mapValueType)).withFlags(flags: _*) := asIntMap(codePointRangeMap, mapValueType)
+      def intMapMethod(name: String, mapValueType: Type, codePointRangeMap: SortedMap[CodePointRange, Tree]): Tree =
+        VAL(name, intMapType(mapValueType)).withFlags(valFlags: _*) := asIntMap(codePointRangeMap, mapValueType)
 
       CLASSDEF("GeneratedCodePointMapper").withFlags(Flags.ABSTRACT).withFlags(PRIVATEWITHIN("uts46")).withParents("CodePointMapperBase") := Block(
         bitSetMethod("validAlways", validAlways.map(_._1)),
@@ -640,8 +655,12 @@ object UTS46IDNAMappingTable {
         bitSetMethod("ignored", ignored.map(_._1)),
         bitSetMethod("disallowed", disallowed.map(_._1)),
         bitSetMethod("deviationIgnored", deviationIgnored.map(_._1)),
-        intMapMethod("mappedMultiCodePoints", nelOfIntType)
+        intMapMethod("mappedMultiCodePoints", nelOfIntType, mappedMulti.foldLeft(SortedMap.empty[CodePointRange, Tree]){
+          case (acc, (codePointRange, mapped, _)) =>
+            acc + (codePointRange -> nelToTree(mapped.map(_.value)))
+        })
       )
+    }
 
     /** Given a package name, generate the `String` content of the generated
       * source file.
@@ -688,6 +707,8 @@ object UTS46IDNAMappingTable {
     def empty(version: UnicodeVersion): Rows =
       Rows(
         version,
+        SortedSet.empty,
+        SortedSet.empty,
         SortedSet.empty,
         SortedSet.empty,
         SortedSet.empty,

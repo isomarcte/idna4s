@@ -2,5 +2,6 @@
 
 libraryDependencies ++= List(
   "com.eed3si9n" %% "treehugger" % "0.4.4",
+  "org.scalameta" %% "scalameta" % "4.5.13",
   "org.typelevel" %% "cats-core" % "2.8.0"
 )

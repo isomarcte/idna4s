@@ -14,9 +14,7 @@ import scala.util.Try
 import scala.util.matching._
 import scala.collection.immutable.SortedSet
 import scala.collection.immutable.SortedMap
-import treehugger.forest._
-import treehugger.forest.definitions._
-import treehugger.forest.treehuggerDSL._
+import scala.meta._
 
 /** Functions for generating the UTS-46 lookup tables for step 1 of UTS-46
   * processing.
@@ -421,55 +419,49 @@ object UTS46IDNAMappingTable {
     implicit def orderingInstance: Ordering[Comment] = orderInstance.toOrdering
   }
 
-  private val immutableCollectionPackage: Tree =
-    REF("_root_") DOT "scala" DOT "collection" DOT "immutable"
-
   private val bitSetType: Type =
-    TYPE_REF(immutableCollectionPackage DOT "BitSet")
+    t"_root_.scala.collection.immutable.BitSet"
 
   private def intMapType(valueType: Type): Type =
-    TYPE_REF(immutableCollectionPackage DOT "IntMap" APPLYTYPE(valueType))
-
-  private val nelPrefix: Tree =
-    REF("_root_") DOT "cats" DOT "data" DOT "NonEmptyList"
+    t"_root.scala.collection.immutable.IntMap[$valueType]"
 
   private def nelType(valueType: Type): Type =
-    TYPE_REF(nelPrefix) TYPE_OF valueType
+    t"_root_.cats.data.NonEmptyList[$valueType]"
 
   private val intMapOfIntType: Type =
-    intMapType(IntClass)
-
-  private val intMapOfNELOfIntType: Type =
-    intMapType(nelType(IntClass))
+    intMapType(t"Int")
 
   private val nelOfIntType: Type =
-    nelType(IntClass)
+    nelType(t"Int")
+
+  private val intMapOfNELOfIntType: Type =
+    intMapType(nelOfIntType)
 
   private def emptyIntMap(valueType: Type): Tree =
-    immutableCollectionPackage DOT "IntMap" DOT "empty" APPLYTYPE(valueType)
+    q"_root_.scala.collection.immutable.IntMap.empty[$valueType]"
 
   private def nelToTree(value: NonEmptyList[Int]): Tree =
-    nelPrefix DOT "of" APPLY(value.toList.map(LIT(_)): _*)
+    q"_root_.cats.data.NonEmptyList.of(..${value.map(Lit.Int.apply)})"
 
-  val emptyBitSet: Tree =
-    immutableCollectionPackage DOT "BitMap" DOT "empty"
+  private val emptyBitSet: Tree =
+    q"_root_.scala.collection.immutable.BitSet.empty"
 
-  def rangeInclusiveTree(codePointRange: CodePointRange): Tree =
-    immutableCollectionPackage DOT "Range" DOT "inclusive" APPLY (LIT(codePointRange.lower.value), LIT(codePointRange.upper.value))
+  private def rangeInclusiveTree(codePointRange: CodePointRange): Tree =
+    q"_root_.scala.collection.immutable.Range.inclusive(${Lit.Int(codePointRange.lower.value)}, ${Lit.Int(codePointRange.upper.value)})"
 
-  def asBitSet[F[_]: Foldable: Functor](fa: F[CodePointRange]): Tree =
+  private def asBitSet[F[_]: Foldable: Functor](fa: F[CodePointRange]): Tree =
     fa.foldMap(value =>
-      List(rangeInclusiveTree(value) DOT "foldLeft" APPLY emptyBitSet APPLY (LAMBDA(PARAM("acc"), PARAM("value")) ==> REF("acc") DOT "incl" APPLY REF("value")))
+      List(q"""${rangeInclusiveTree(value)}.foldLeft(${emptyBitSet})(_.incl(_))""")
     ) match {
       case x :: xs =>
         xs.foldLeft(x){
           case (acc, value) =>
-            acc DOT "concat" APPLY value
+            q"$acc.concat($value)"
         }
       case _ => emptyBitSet
     }
 
-  def asIntMap(fa: SortedMap[CodePointRange, Tree], valueType: Type): Tree =
+  private def asIntMap(fa: SortedMap[CodePointRange, Tree], valueType: Type): Tree =
     fa.foldLeft(List.empty[Tree]){
       case (acc, (codePointRange, result)) =>
         (rangeInclusiveTree(codePointRange) DOT "foldLeft" APPLY emptyIntMap(valueType) APPLY (LAMBDA(PARAM("acc"), PARAM("value")) ==> REF("acc") DOT "updated" APPLY (TUPLE(REF("value"), result)))) +: acc

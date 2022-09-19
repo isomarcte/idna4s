@@ -437,43 +437,51 @@ object UTS46IDNAMappingTable {
   private val intMapOfNELOfIntType: Type =
     intMapType(nelOfIntType)
 
-  private def emptyIntMap(valueType: Type): Tree =
+  private def emptyIntMap(valueType: Type): Term =
     q"_root_.scala.collection.immutable.IntMap.empty[$valueType]"
 
-  private def nelToTree(value: NonEmptyList[Int]): Tree =
-    q"_root_.cats.data.NonEmptyList.of(..${value.map(Lit.Int.apply)})"
+  private def nelToTree(value: NonEmptyList[Int]): Term =
+    q"_root_.cats.data.NonEmptyList.of(..${value.toList.map(Lit.Int.apply)})"
 
-  private val emptyBitSet: Tree =
+  private val emptyBitSet: Term =
     q"_root_.scala.collection.immutable.BitSet.empty"
 
-  private def rangeInclusiveTree(codePointRange: CodePointRange): Tree =
+  private def rangeInclusiveTree(codePointRange: CodePointRange): Term =
     q"_root_.scala.collection.immutable.Range.inclusive(${Lit.Int(codePointRange.lower.value)}, ${Lit.Int(codePointRange.upper.value)})"
 
-  private def asBitSet[F[_]: Foldable: Functor](fa: F[CodePointRange]): Tree =
-    fa.foldMap(value =>
+  private def asBitSet[F[_]: Foldable: Functor](fa: F[CodePointRange]): Term = {
+    val a = fa.foldMap(value =>
       List(q"""${rangeInclusiveTree(value)}.foldLeft(${emptyBitSet})(_.incl(_))""")
     ) match {
       case x :: xs =>
         xs.foldLeft(x){
           case (acc, value) =>
-            q"$acc.concat($value)"
+            q"$value.concat($acc)"
         }
       case _ => emptyBitSet
     }
+    println(a)
+    a
+  }
 
-  private def asIntMap(fa: SortedMap[CodePointRange, Tree], valueType: Type): Tree =
-    fa.foldLeft(List.empty[Tree]){
+  private def asIntMap(fa: SortedMap[CodePointRange, Tree], valueType: Type): Term = {
+    val a = fa.foldLeft(List.empty[Term]){
       case (acc, (codePointRange, result)) =>
-        (rangeInclusiveTree(codePointRange) DOT "foldLeft" APPLY emptyIntMap(valueType) APPLY (LAMBDA(PARAM("acc"), PARAM("value")) ==> REF("acc") DOT "updated" APPLY (TUPLE(REF("value"), result)))) +: acc
+        q"""${rangeInclusiveTree(codePointRange)}.foldLeft(${emptyIntMap(valueType)}){ case (acc, value) => acc.updated(value -> result)}""" +: acc
     } match {
       case x :: xs =>
         xs.foldLeft(x){
           case (acc, value) =>
-            acc DOT "concat" APPLY value
+            val a = q"$value.concat($acc)"
+            println(a)
+            a
         }
       case _ =>
         emptyIntMap(valueType)
     }
+    println(a)
+    a
+  }
 
   /** A type representing a single row parsed from the UTS-46 lookup tables.
     */
@@ -617,7 +625,7 @@ object UTS46IDNAMappingTable {
       codePointStatus match {
         case codePointStatus: Valid =>
           addValid(codePointRange, codePointStatus.idna2008Status, comment)
-        case Ignored =>
+         case Ignored =>
           addIgnored(codePointRange, comment)
         case codePointStatus: Mapped =>
           addMapped(codePointRange, codePointStatus.mapping, comment)
@@ -633,31 +641,38 @@ object UTS46IDNAMappingTable {
     }
 
     private def asSourceTree: Tree = {
-      val valFlags: List[Long] = SortedSet[Long](Flags.FINAL, Flags.OVERRIDE, Flags.PROTECTED).toList
-      def bitSetMethod(name: String, codePointRanges: SortedSet[CodePointRange]): Tree =
-        VAL(name, bitSetType).withFlags(valFlags: _*) := asBitSet(codePointRanges.toList)
+      def bitSetMethod(name: String, codePointRanges: SortedSet[CodePointRange]): Defn.Val =
+        q"""protected override final val ${name} = ${asBitSet(codePointRanges.toList)}"""
 
-      def intMapMethod(name: String, mapValueType: Type, codePointRangeMap: SortedMap[CodePointRange, Tree]): Tree =
-        VAL(name, intMapType(mapValueType)).withFlags(valFlags: _*) := asIntMap(codePointRangeMap, mapValueType)
+      def intMapMethod(name: String, mapValueType: Type, codePointRangeMap: SortedMap[CodePointRange, Tree]): Defn.Val =
+        q"""protected override final val ${name} = ${asIntMap(codePointRangeMap, mapValueType)}"""
 
-      CLASSDEF("GeneratedCodePointMapper").withFlags(Flags.ABSTRACT).withFlags(PRIVATEWITHIN("uts46")).withParents("CodePointMapperBase") := Block(
-        bitSetMethod("validAlways", validAlways.map(_._1)),
-        bitSetMethod("validNV8", validNV8.map(_._1)),
-        bitSetMethod("validXV8", validXV8.map(_._1)),
-        bitSetMethod("ignored", ignored.map(_._1)),
-        bitSetMethod("disallowed", disallowed.map(_._1)),
-        bitSetMethod("deviationIgnored", deviationIgnored.map(_._1)),
-        intMapMethod("mappedMultiCodePoints", nelOfIntType, mappedMulti.foldLeft(SortedMap.empty[CodePointRange, Tree]){
-          case (acc, (codePointRange, mapped, _)) =>
-            acc + (codePointRange -> nelToTree(mapped.map(_.value)))
-        })
-      )
+      q"""private[uts46] abstract class GeneratedCodePointMapper extends CodePointMapperBase {
+           ${bitSetMethod("validAlways", validAlways.map(_._1))}
+           ${bitSetMethod("validNV8", validNV8.map(_._1))}
+           ${bitSetMethod("validXV8", validXV8.map(_._1))}
+           ${bitSetMethod("ignored", ignored.map(_._1))}
+           ${bitSetMethod("disallowed", disallowed.map(_._1))}
+           ${bitSetMethod("deviationIgnored", deviationIgnored.map(_._1))}
+       }"""
+      // CLASSDEF("GeneratedCodePointMapper").withFlags(Flags.ABSTRACT).withFlags(PRIVATEWITHIN("uts46")).withParents("CodePointMapperBase") := Block(
+      //   bitSetMethod("validAlways", validAlways.map(_._1)),
+      //   bitSetMethod("validNV8", validNV8.map(_._1)),
+      //   bitSetMethod("validXV8", validXV8.map(_._1)),
+      //   bitSetMethod("ignored", ignored.map(_._1)),
+      //   bitSetMethod("disallowed", disallowed.map(_._1)),
+      //   bitSetMethod("deviationIgnored", deviationIgnored.map(_._1)),
+      //   intMapMethod("mappedMultiCodePoints", nelOfIntType, mappedMulti.foldLeft(SortedMap.empty[CodePointRange, Tree]){
+      //     case (acc, (codePointRange, mapped, _)) =>
+      //       acc + (codePointRange -> nelToTree(mapped.map(_.value)))
+      //   })
+      // )
     }
 
     /** Given a package name, generate the `String` content of the generated
       * source file.
       */
-    def asSourceFile: String = ???
+    def asSourceFile: String = asSourceTree.hashCode.toString
 
 // {
 //       // Approximately 9000 lines in the 14.0.0 version

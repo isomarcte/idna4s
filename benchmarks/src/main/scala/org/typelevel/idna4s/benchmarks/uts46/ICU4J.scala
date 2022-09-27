@@ -55,21 +55,21 @@ class ICU4J {
   def idna4sUTS46: Either[CodePointMapper.MappingException, String] =
     CodePointMapper.mapCodePoints(nextString)
 
-  @Benchmark
-  def icu4jUTS46: String =
-    icu4jUTS46Normalizer2
-      .normalize(nextString, new java.lang.StringBuilder(nextString.size))
-      .toString
+  // @Benchmark
+  // def icu4jUTS46: String =
+  //   icu4jUTS46Normalizer2
+  //     .normalize(nextString, new java.lang.StringBuilder(nextString.size))
+  //     .toString
 
-  @Benchmark
-  def idna4sUTS46ASCII: Either[CodePointMapper.MappingException, String] =
-    CodePointMapper.mapCodePoints(nextASCIIString)
+  // @Benchmark
+  // def idna4sUTS46ASCII: Either[CodePointMapper.MappingException, String] =
+  //   CodePointMapper.mapCodePoints(nextASCIIString)
 
-  @Benchmark
-  def icu4jUTS46ASCII: String =
-    icu4jUTS46Normalizer2
-      .normalize(nextASCIIString, new java.lang.StringBuilder(nextString.size))
-      .toString
+  // @Benchmark
+  // def icu4jUTS46ASCII: String =
+  //   icu4jUTS46Normalizer2
+  //     .normalize(nextASCIIString, new java.lang.StringBuilder(nextString.size))
+  //     .toString
 }
 
 object ICU4J {

@@ -714,8 +714,15 @@ object UTS46CodeGen {
       }
 
       // Create a val definition for one of the methods
-      def emitMethod(name: String, rhs: Term): Defn.Val =
-        q"protected override final lazy val ${Pat.Var(Term.Name(name))} = $rhs"
+      def emitMethod(name: String, rhs: Term): Defn =
+        q"""protected override final def ${Term.Name(name)} =
+              if (${varNameFor(name)} eq null) {
+                ${varNameFor(name)} = $rhs
+                ${varNameFor(name)}
+              } else {
+                ${varNameFor(name)}
+              }
+         """
 
       // For a set of code points which map to a single result code point,
       // create the expression that yields an IntMap[Int] of that mapping.
@@ -742,40 +749,52 @@ object UTS46CodeGen {
 
       // Create the expressions for the various methods we are overriding.
 
-      def validAlwaysMethod: Defn.Val =
+      def initNameFor(name: String): Term.Name =
+        Term.Name(s"${name}IsInit")
+
+      def varNameFor(name: String): Term.Name =
+        Term.Name(s"${name}Var")
+
+      def emitConstructorFieldsForName(name: String, varType: Type): List[Term.Param] =
+        List[Term.Param](
+          param"@volatile @transient private var ${initNameFor(name)}: Boolean",
+          param"@transient private var ${varNameFor(name)}: ${varType}"
+        )
+
+      def validAlwaysMethod: Defn =
         emitMethod("validAlways", asBitSetTerm(validAlways))
 
-      def validNV8Method: Defn.Val =
+      def validNV8Method: Defn =
         emitMethod("validNV8", asBitSetTerm(validNV8))
 
-      def validXV8Method: Defn.Val =
+      def validXV8Method: Defn =
         emitMethod("validXV8", asBitSetTerm(validXV8))
 
-      def ignoredMethod: Defn.Val =
+      def ignoredMethod: Defn =
         emitMethod("ignored", asBitSetTerm(ignored))
 
-      def disallowedMethod: Defn.Val =
+      def disallowedMethod: Defn =
         emitMethod("disallowed", asBitSetTerm(disallowed))
 
-      def deviationIgnoredMethod: Defn.Val =
+      def deviationIgnoredMethod: Defn =
         emitMethod("deviationIgnored", asBitSetTerm(deviationIgnored))
 
-      def disallowedSTD3ValidMethod: Defn.Val =
+      def disallowedSTD3ValidMethod: Defn =
         emitMethod("disallowedSTD3Valid", asBitSetTerm(disallowedSTD3Valid))
 
-      def mappedMultiMethod: Defn.Val =
+      def mappedMultiMethod: Defn =
         emitMethod("mappedMultiCodePoints", multiMappingToTrees(mappedMulti))
 
-      def deviationMappedMethod: Defn.Val =
+      def deviationMappedMethod: Defn =
         emitMethod("deviationMapped", singleMappingToTrees(deviationMapped))
 
-      def deviationMultiMappedMethod: Defn.Val =
+      def deviationMultiMappedMethod: Defn =
         emitMethod("deviationMultiMapped", multiMappingToTrees(deviationMultiMapped))
 
-      def disallowedSTD3MappedMethod: Defn.Val =
+      def disallowedSTD3MappedMethod: Defn =
         emitMethod("disallowedSTD3Mapped", singleMappingToTrees(disallowedSTD3Mapped))
 
-      def disallowedSTD3MultiMappedMethod: Defn.Val =
+      def disallowedSTD3MultiMappedMethod: Defn =
         emitMethod("disallowedSTD3MultiMapped", multiMappingToTrees(disallowedSTD3MultiMapped))
 
       // Note: Things are different for the `def mapped: IntMap[Int]`
@@ -796,7 +815,13 @@ object UTS46CodeGen {
           q"private final def mapped1 = ${singleMappingToTrees(mapped1)}",
           q"private final def mapped2 = ${singleMappingToTrees(mapped2)}",
           q"private final def mapped3 = ${singleMappingToTrees(mapped3)}",
-          q"protected override final lazy val mapped = mapped0 ++ mapped1 ++ mapped2 ++ mapped3"
+          q"""protected override final def mapped =
+                if (${varNameFor("mapped")} eq null) {
+                  ${varNameFor("mapped")} = mapped0 ++ mapped1 ++ mapped2 ++ mapped3
+                  ${varNameFor("mapped")}
+                } else {
+                  ${varNameFor("mapped")}
+                }"""
         )
       }
 
@@ -814,13 +839,36 @@ import scala.collection.immutable.IntMap
 import cats.data.NonEmptyList
 import cats.collections.BitSet
 
-private[uts46] abstract class GeneratedCodePointMapper0 extends CodePointMapperBase {
+private[uts46] abstract class GeneratedCodePointMapper0 private (
+  ..${emitConstructorFieldsForName("mapped", intMapOfIntType)}
+  ..${emitConstructorFieldsForName("mappedMultiCodePoints", intMapOfNELOfIntType)}
+) extends CodePointMapperBase {
+
+  protected def this() {
+    this(..${List.fill(2)(List(q"false", q"null")).flatten})
+  }
+
   override final val unicodeVersion = ${Lit.String(version.value)}
   $mappedMultiMethod
   ..$mappedMethods
 }
 
-private[uts46] abstract class GeneratedCodePointMapper extends GeneratedCodePointMapper0 {
+private[uts46] abstract class GeneratedCodePointMapper private (
+..${emitConstructorFieldsForName("validAlways", bitSetType)}
+..${emitConstructorFieldsForName("validNV8", bitSetType)}
+..${emitConstructorFieldsForName("validXV8", bitSetType)}
+..${emitConstructorFieldsForName("ignored", bitSetType)}
+..${emitConstructorFieldsForName("deviationMapped", intMapOfIntType)}
+..${emitConstructorFieldsForName("deviationMultiMapped", intMapOfNELOfIntType)}
+..${emitConstructorFieldsForName("disallowed", bitSetType)}
+..${emitConstructorFieldsForName("disallowedSTD3Valid", bitSetType)}
+..${emitConstructorFieldsForName("disallowedSTD3Mapped", intMapOfIntType)}
+..${emitConstructorFieldsForName("disallowedSTD3MultiMapped", intMapOfNELOfIntType)}
+..${emitConstructorFieldsForName("deviationIgnored", bitSetType)}
+) extends GeneratedCodePointMapper0() {
+  protected def this() {
+    this(..${List.fill(11)(List(q"false", q"null")).flatten})
+  }
            $validAlwaysMethod
            $validNV8Method
            $validXV8Method

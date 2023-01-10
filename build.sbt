@@ -13,6 +13,7 @@ val catsCollectionsV = "0.9.5"
 val catsV            = "2.8.0"
 val disciplineMunitV = "2.0.0-M3"
 val icu4jV           = "72.1"
+val kittensV         = "3.0.0"
 val literallyV       = "1.1.0"
 val munitV           = "1.0.0-M6"
 val scalacheckV      = "1.17.0"
@@ -173,8 +174,9 @@ lazy val tests = crossProject(JVMPlatform, JSPlatform, NativePlatform)
   .settings(
     name := s"${projectName}-tests",
     libraryDependencies ++= Seq(
+      "org.typelevel" %%% "cats-laws"        % catsV,
       "org.typelevel" %%% "discipline-munit" % disciplineMunitV,
-      "org.typelevel" %%% "cats-laws"        % catsV
+      "org.typelevel" %%% "kittens"          % kittensV
     ),
     Test / console / initialCommands := {
       List(

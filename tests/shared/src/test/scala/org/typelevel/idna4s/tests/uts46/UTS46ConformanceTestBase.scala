@@ -189,6 +189,8 @@ object UTS46ConformanceTestBase {
       loop(new StringBuilder(value.size), None, value.toList)
     }
 
+    def stringToStatusSet(value: String)
+
     private[this] final val LineRegex =
       """\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*#\s*(.*)""".r
 
@@ -265,5 +267,42 @@ object UTS46ConformanceTestBase {
     final case class Bidi(step: Long) extends Status
     final case class ContextJ(step: Long) extends Status
     final case class ToUnicode(step: Long) extends Status
+
+    private[this] final val StatusRegex =
+      """(P|V|U|A|B|C|X)(\d+)""".r
+
+    def fromString(value: String): Either[String, String] =
+      value.trim match {
+        case StatusRegex("P", step) =>
+          Either.catchNonFatal(step.toLong).map(step =>
+            Right(Processing(step))
+          )
+        case StatusRegex("V", step) =>
+          Either.catchNonFatal(step.toLong).map(step =>
+            Right(Validity(step))
+          )
+        case StatusRegex("U", step) =>
+          Either.catchNonFatal(step.toLong).map(step =>
+            Right(UseSTD3ASCIIRules(step))
+          )
+        case StatusRegex("A", step) =>
+          Either.catchNonFatal(step.toLong).map(step =>
+            Right(ToASCII(step))
+          )
+        case StatusRegex("B", step) =>
+          Either.catchNonFatal(step.toLong).map(step =>
+            Right(Bidi(step))
+          )
+        case StatusRegex("C", step) =>
+          Either.catchNonFatal(step.toLong).map(step =>
+            Right(ContextJ(step))
+          )
+        case StatusRegex("X", step) =>
+          Either.catchNonFatal(step.toLong).map(step =>
+            Right(ToUnicode(step))
+          )
+        case _ =>
+          Left(s"Not a valid UTS-46 conformance status: ${value}")
+      }
   }
 }

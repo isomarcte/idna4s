@@ -1,11 +1,13 @@
 package org.typelevel.idna4s.tests.uts46
 
 import cats._
-import scala.collection.immutable.SortedSet
+import cats.data._
 import cats.derived.semiauto
-import scala.util.matching.Regex
-import org.typelevel.idna4s.core._
+import cats.syntax.all._
 import java.util.regex.MatchResult
+import org.typelevel.idna4s.core._
+import scala.collection.immutable.SortedSet
+import scala.util.matching.Regex
 
 private[uts46] trait UTS46ConformanceTestBase {
   protected def testLines: SortedSet[String]
@@ -41,22 +43,17 @@ private[uts46] object UTS46ConformanceTestBase {
     implicit def orderingInstance: Ordering[ConformanceTest] =
       hashAndOrderForConformanceTest.toOrdering
 
-    private[this] final val UnescapeRegex0: Regex =
+    private[this] final val UnescapeRegex0 =
       """\\u(\p{XDigit}{4})""".r
 
-    private[this] final val UnescapeRegex1: Regex =
-      """\\x\{(\p{XDigit}{4})\})"""
+    private[this] final val UnescapeRegex1 =
+      """\\x\{(\p{XDigit}{4})\})""".r
 
     def unescape(value: String): Either[String, CodePoint] = {
-      def
-      Either.catchNonFatal(
 
-        UnescapeRegex0.pattern.matcher(value).replaceAll((matchResult: MatchResult) =>
-          CodePoint.fromInt("0x" + matchResult.group)
-        )
-      )
+    }
 
-    private[this] final val LineRegex: Regex =
+    private[this] final val LineRegex =
       """\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*""".r
 
     def fromLine(value: String): Either[String, ConformanceTest] =

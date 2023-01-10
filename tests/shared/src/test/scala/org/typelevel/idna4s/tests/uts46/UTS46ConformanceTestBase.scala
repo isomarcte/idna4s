@@ -4,18 +4,20 @@ import cats._
 import cats.data._
 import cats.derived.semiauto
 import cats.syntax.all._
+import java.lang.StringBuilder
+import java.nio.charset.StandardCharsets.UTF_8
+import java.util.SortedMap
 import java.util.regex.MatchResult
 import org.typelevel.idna4s.core._
+import scala.annotation.tailrec
 import scala.collection.immutable.SortedSet
 import scala.util.matching.Regex
-import java.nio.charset.StandardCharsets.UTF_8
-import scala.annotation.tailrec
 
-private[uts46] trait UTS46ConformanceTestBase {
+trait UTS46ConformanceTestBase {
   protected def testLines: SortedSet[String]
 }
 
-private[uts46] object UTS46ConformanceTestBase {
+object UTS46ConformanceTestBase {
   final case class ConformanceTest(
     source: String,
     toUnicodeResult: String,
@@ -49,12 +51,12 @@ private[uts46] object UTS46ConformanceTestBase {
       """\\u(\p{XDigit}{4})""".r
 
     private[this] final val UnescapeRegex1 =
-      """\\x\{(\p{XDigit}{4})\})""".r
+      """\\x\{(\p{XDigit}{4})\}""".r
 
     private[this] sealed abstract class UnescapeState extends Product with Serializable {
       import UnescapeState._
 
-      final def unwindIntoStringBuilder(sb: StringBuilder): Unit =
+      final def unwindIntoStringBuilder(sb: StringBuilder): StringBuilder =
         this match {
           case StartEscape =>
             sb.append('\\')
@@ -91,31 +93,21 @@ private[uts46] object UTS46ConformanceTestBase {
             (x, y) match {
               case (StartEscape, StartEscape) => 0
               case (ExpectLeftBrace, ExpectLeftBrace) => 0
-              case (ExpectRightBrace, ExpectRightBrace) => 0
-              case (ExpectHexChar(x), ExpectHexChar(y)) => x.compare(y)
+              case (ExpectRightBrace(x), ExpectRightBrace(y)) => x.compare(y)
+              case (ExpectHexChar(a, b), ExpectHexChar(c, d)) => (a, b).compare((c, d))
               case (StartEscape, _) => 1
               case (_, StartEscape) => -1
               case (ExpectLeftBrace, _) => 1
               case (_, ExpectLeftBrace) => -1
-              case (ExpectRightBrace, _) => 1
-              case (_, ExpectRightBrace) => -1
+              case (_: ExpectRightBrace, _) => 1
+              case (_, _: ExpectRightBrace) => -1
             }
         }
     }
 
-    private def hexToByte(value: String): Either[String, Byte] =
-      Either.catchNonFatal(Integer.parseInt(value, 16)).leftMap(_.getLocalizedMessage)
-
-    private def hexChain4ToByte(value: Chain[Char]): Either[String, Int] =
-      if (value.size === 4) {
-        hexToInt(value.mkString_)
-      } else {
-        Left(s"Expected exactly 4 hex chars, but got ${value.size}. This is an idan4s bug.")
-      }
-
-    def unescape(value: String): Either[String, CodePoint] = {
+    def unescape(value: String): Either[String, String] = {
       @tailrec
-      def loop(acc: StringBuilder, utf8Bytes: Chain[Byte], state: Option[UnescapeState], rest: List[Char]): Either[String, String] =
+      def loop(acc: StringBuilder, state: Option[UnescapeState], rest: List[Char]): Either[String, String] =
         rest match {
           case Nil =>
             val sb =
@@ -127,61 +119,88 @@ private[uts46] object UTS46ConformanceTestBase {
                   state.unwindIntoStringBuilder(acc)
               }
 
-              if (utf8Bytes.nonEmpty) {
-                Either.catchNonFatal(
-                  sb.append(new String(utf8Bytes.toArray, UTF_8)).toString
-                )
-              } else {
-                Right(sb.toString)
-              }
+            Right(sb.toString)
           case '\\' :: rest =>
             state match {
               case None =>
-                loop(acc, utf8Bytes, Some(UnescapeState.StartEscape), rest)
+                loop(acc, Some(UnescapeState.StartEscape), rest)
               case Some(state) =>
                 // Either this is a bug, the input is corrupt, or we are not
                 // in an escape sequence. We assume the final case.
-                loop(state.unwindIntoStringBuilder(acc), utf8Bytes, Some(UnescapeState.StartEscape), rest)
+                loop(state.unwindIntoStringBuilder(acc), Some(UnescapeState.StartEscape), rest)
             }
           case x :: rest =>
             state match {
               case None =>
-                loop(acc.append(x), utf8Bytes, state, rest)
+                loop(acc.append(x), state, rest)
               case Some(state) =>
                 state match {
                   case UnescapeState.StartEscape =>
                     x match {
                       case 'u' =>
-                        loop(acc, utf8Bytes, Some(UnescapeState.ExpectHexChar(true, Chain.empty)), rest)
+                        loop(acc, Some(UnescapeState.ExpectHexChar(true, Chain.empty)), rest)
                       case 'x' =>
-                        loop(acc, utf8Bytes, Some(UnescapeState.ExpectLeftBrace), rest)
+                        loop(acc, Some(UnescapeState.ExpectLeftBrace), rest)
                       case x =>
                         // Assume it this is not actually an escape sequence
-                        loop(state.unwindIntoStringBuilder(acc).append(x), utf8Bytes, None, rest)
+                        loop(state.unwindIntoStringBuilder(acc).append(x), None, rest)
                     }
                   case UnescapeState.ExpectLeftBrace =>
                     x match {
                       case '{' =>
-                        loop(acc, utf8Bytes, Some(UnescapeState.ExpectHexChar(false, Chain.empty)), rest)
+                        loop(acc, Some(UnescapeState.ExpectHexChar(false, Chain.empty)), rest)
                       case x =>
                         // Assume it this is not actually an escape sequence
-                        loop(state.unwindIntoStringBuilder(acc).append(x), utf8Bytes, None, rest)
+                        loop(state.unwindIntoStringBuilder(acc).append(x), None, rest)
                     }
                   case UnescapeState.ExpectRightBrace(chars) =>
-                    loop(hexChain4ToInt(chars)
-                  case
+                    x match {
+                      case '}' =>
+                        CodePoint.fromString(chars.mkString_("0x", "", "")) match {
+                          case Right(value) =>
+                            loop(acc.appendCodePoint(value.value), None, rest)
+                          case Left(error) =>
+                            Left(error)
+                        }
+                      case x =>
+                        // Assume it this is not actually an escape sequence
+                        loop(state.unwindIntoStringBuilder(acc).append(x), None, rest)
+                    }
+                  case UnescapeState.ExpectHexChar(isUStyleEscape, hexDigits) =>
+                    x match {
+                      case x if (x >= 'a' && x <= 'f') || (x >= 'A' && x <= 'F') || (x >= '0' && x <= '9') =>
+                        val state = (hexDigits :+ x) match {
+                          case hexDigits =>
+                            if (hexDigits.size >= 3) {
+                              UnescapeState.ExpectRightBrace(hexDigits)
+                            } else {
+                              UnescapeState.ExpectHexChar(isUStyleEscape, hexDigits)
+                            }
+                        }
+                        loop(acc, Some(state), rest)
+                      case x =>
+                        // Assume it this is not actually an escape sequence
+                        loop(state.unwindIntoStringBuilder(acc).append(x), None, rest)
+                    }
                 }
             }
         }
+
+      loop(new StringBuilder(value.size), None, value.toList)
     }
 
     private[this] final val LineRegex =
-      """\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*""".r
+      """\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*#\s*(.*)""".r
 
     def fromLine(value: String): Either[String, ConformanceTest] =
       value match {
-        case LineRegex(source, toUnicodeResult, toUnicodeStatus, toAsciiN, toAsciiNStatus, toAsciiT, toAsciiTStatus) =>
-          ???
+        case LineRegex(source, toUnicodeResult, toUnicodeStatus, toAsciiN, toAsciiNStatus, toAsciiT, toAsciiTStatus, comment) =>
+          (unescape(source), unescape(toUnicodeResult), unescape(toUnicodeStatus), unescape(toAsciiN), unescape(toAsciiNStatus), unescape(toAsciiT), unescape(toAsciiTStatus)).mapN{
+            case (source, toUnicodeResult, toUnicodeStatus, toAsciiN, toAsciiNStatus, toAsciiT, toAsciiTStatus) =>
+              ConformanceTest(source, toUnicodeResult, toUnicodeStatus, toAsciiN, toAsciiNStatus, toAsciiT, toAsciiTStatus, comment)
+          }
+        case _ =>
+          Left(s"Value is not a valid conformance test line: ${value}")
       }
 
   }

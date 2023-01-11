@@ -206,8 +206,12 @@ object ConformanceTest {
     }
   }
 
+  // Note, whitespace in the sections _is_ significant. Trimming should only
+  // be done in the context of a particular section. For example, we want to
+  // trim whitespace when parsing status values, but not when parsing
+  // source/result values.
   private[this] final val LineRegex =
-    """\s*([^;]*)\s*;\s*([^;]*)\s*;\s*([^;]*)\s*;\s*([^;]*)\s*;\s*([^;]*)\s*;\s*([^;]*)\s*;\s*([^#]*)\s*(#.*)?""".r
+    """([^;]*);([^;]*);([^;]*);([^;]*);([^;]*);([^;]*);([^#]*)(#.*)?""".r
 
   def fromLine(value: String): Either[Throwable, ConformanceTest] = {
     def unescapeThrowable(value: String): Either[Throwable, String] =

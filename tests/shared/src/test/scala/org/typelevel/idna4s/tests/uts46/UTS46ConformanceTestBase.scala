@@ -5,13 +5,9 @@ import cats.data._
 import cats.derived.semiauto
 import cats.syntax.all._
 import java.lang.StringBuilder
-import java.nio.charset.StandardCharsets.UTF_8
-import java.util.SortedMap
-import java.util.regex.MatchResult
 import org.typelevel.idna4s.core._
 import scala.annotation.tailrec
 import scala.collection.immutable.SortedSet
-import scala.util.matching.Regex
 
 trait UTS46ConformanceTestBase {
   protected def testLines: SortedSet[String]

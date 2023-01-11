@@ -26,7 +26,7 @@ object UTS46ConformanceTestBase {
     toAsciiNStatus: SortedSet[Status],
     toAsciiT: String,
     toAsciiTStatus: SortedSet[Status],
-    comment: String
+    comment: Option[String]
   )
 
   object ConformanceTest {
@@ -189,17 +189,48 @@ object UTS46ConformanceTestBase {
       loop(new StringBuilder(value.size), None, value.toList)
     }
 
-    def stringToStatusSet(value: String)
+    def stringToStatusSet(value: String): Either[String, SortedSet[Status]] = {
+      def error: Either[String, SortedSet[Status]] = Left(s"Not a valid UTS-46 conformance test status string: ${value}")
+      value.trim match {
+        case value if value.isEmpty =>
+          SortedSet.empty[Status].asRight[String]
+        case value =>
+          if (value.nonEmpty && value.head === '[') {
+            value.tail match {
+              case value =>
+                if (value.nonEmpty && value.last === ']') {
+                  value.init.split(',').toList.foldMapM(value =>
+                    Status.fromString(value.trim).map((value: Status) => SortedSet(value))
+                  )
+                } else {
+                  error
+                }
+            }
+          } else {
+            error
+          }
+      }
+    }
 
     private[this] final val LineRegex =
-      """\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*;\s*(.*)\s*#\s*(.*)""".r
+      """\s*([^;]*)\s*;\s*([^;]*)\s*;\s*([^;]*)\s*;\s*([^;]*)\s*;\s*([^;]*)\s*;\s*([^;]*)\s*;\s*([^#]*)\s*(#.*)?""".r
 
     def fromLine(value: String): Either[String, ConformanceTest] =
       value match {
         case LineRegex(source, toUnicodeResult, toUnicodeStatus, toAsciiN, toAsciiNStatus, toAsciiT, toAsciiTStatus, comment) =>
-          (unescape(source), unescape(toUnicodeResult), unescape(toUnicodeStatus), unescape(toAsciiN), unescape(toAsciiNStatus), unescape(toAsciiT), unescape(toAsciiTStatus)).mapN{
+          (unescape(source), unescape(toUnicodeResult), unescape(toUnicodeStatus), unescape(toAsciiN), unescape(toAsciiNStatus), unescape(toAsciiT), unescape(toAsciiTStatus)).tupled.flatMap{
             case (source, toUnicodeResult, toUnicodeStatus, toAsciiN, toAsciiNStatus, toAsciiT, toAsciiTStatus) =>
-              ConformanceTest(source, toUnicodeResult, toUnicodeStatus, toAsciiN, toAsciiNStatus, toAsciiT, toAsciiTStatus, comment)
+              (stringToStatusSet(toUnicodeStatus), stringToStatusSet(toAsciiNStatus), stringToStatusSet(toAsciiTStatus)).mapN{
+                case (toUnicodeStatus, toAsciiNStatus, toAsciiTStatus) =>
+                  val c: Option[String] =
+                    if (comment.trim.isEmpty) {
+                      None
+                    } else {
+                      Some(comment)
+                    }
+
+                  ConformanceTest(source, toUnicodeResult, toUnicodeStatus, toAsciiN, toAsciiNStatus, toAsciiT, toAsciiTStatus, c)
+              }
           }
         case _ =>
           Left(s"Value is not a valid conformance test line: ${value}")
@@ -271,36 +302,36 @@ object UTS46ConformanceTestBase {
     private[this] final val StatusRegex =
       """(P|V|U|A|B|C|X)(\d+)""".r
 
-    def fromString(value: String): Either[String, String] =
+    def fromString(value: String): Either[String, Status] =
       value.trim match {
         case StatusRegex("P", step) =>
           Either.catchNonFatal(step.toLong).map(step =>
-            Right(Processing(step))
-          )
+            Processing(step)
+          ).leftMap(_.getLocalizedMessage())
         case StatusRegex("V", step) =>
           Either.catchNonFatal(step.toLong).map(step =>
-            Right(Validity(step))
-          )
+            Validity(step)
+          ).leftMap(_.getLocalizedMessage())
         case StatusRegex("U", step) =>
           Either.catchNonFatal(step.toLong).map(step =>
-            Right(UseSTD3ASCIIRules(step))
-          )
+            UseSTD3ASCIIRules(step)
+          ).leftMap(_.getLocalizedMessage())
         case StatusRegex("A", step) =>
           Either.catchNonFatal(step.toLong).map(step =>
-            Right(ToASCII(step))
-          )
+            ToASCII(step)
+          ).leftMap(_.getLocalizedMessage())
         case StatusRegex("B", step) =>
           Either.catchNonFatal(step.toLong).map(step =>
-            Right(Bidi(step))
-          )
+            Bidi(step)
+          ).leftMap(_.getLocalizedMessage())
         case StatusRegex("C", step) =>
           Either.catchNonFatal(step.toLong).map(step =>
-            Right(ContextJ(step))
-          )
+            ContextJ(step)
+          ).leftMap(_.getLocalizedMessage())
         case StatusRegex("X", step) =>
           Either.catchNonFatal(step.toLong).map(step =>
-            Right(ToUnicode(step))
-          )
+            ToUnicode(step)
+          ).leftMap(_.getLocalizedMessage())
         case _ =>
           Left(s"Not a valid UTS-46 conformance status: ${value}")
       }

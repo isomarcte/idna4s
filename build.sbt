@@ -189,7 +189,7 @@ lazy val tests = crossProject(JVMPlatform, JSPlatform, NativePlatform)
         "org.typelevel.idna4s.core.uts46.",
         "org.typelevel.idna4s.scalacheck.all.",
         "org.typelevel.idna4s.tests.",
-        "org.typelevel.idna4s.tests.uts46"
+        "org.typelevel.idna4s.tests.uts46."
       ).map(value => s"import ${value}${wildcardImport.value}").mkString("\n")
     },
     consoleQuick / initialCommands := ""

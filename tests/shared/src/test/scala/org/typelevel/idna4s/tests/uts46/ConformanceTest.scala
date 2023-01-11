@@ -16,7 +16,7 @@ final case class ConformanceTest(
   toUnicodeStatus: SortedSet[Status],
   toAsciiNResult: String,
   toAsciiNStatus: SortedSet[Status],
-  toAsciiT: String,
+  toAsciiTResult: String,
   toAsciiTStatus: SortedSet[Status],
   comment: Option[String]
 )
@@ -181,19 +181,21 @@ object ConformanceTest {
     loop(new StringBuilder(value.size), None, value.toList)
   }
 
-  def stringToStatusSet(value: String): Either[String, SortedSet[Status]] = {
-    def error: Either[String, SortedSet[Status]] = Left(s"Not a valid UTS-46 conformance test status string: ${value}")
+  def stringToStatusSet(value: String): Either[Throwable, Option[SortedSet[Status]]] = {
+    def error: Either[Throwable, Option[SortedSet[Status]]] = Left(new RuntimeException(s"Not a valid UTS-46 conformance test status string: ${value}"))
     value.trim match {
       case value if value.isEmpty =>
-        SortedSet.empty[Status].asRight[String]
+        Option.empty[SortedSet[Status]].asRight[Throwable]
       case value =>
         if (value.nonEmpty && value.head === '[') {
           value.tail match {
             case value =>
-              if (value.nonEmpty && value.last === ']') {
+              if (value.trim.size > 1 && value.last === ']') {
                 value.init.split(',').toList.foldMapM(value =>
                   Status.fromString(value.trim).map((value: Status) => SortedSet(value))
-                )
+                ).map(value => Option(value))
+              } else if (value.trim === "]"){
+                Option.empty[SortedSet[Status]].asRight[Throwable]
               } else {
                 error
               }
@@ -207,26 +209,40 @@ object ConformanceTest {
   private[this] final val LineRegex =
     """\s*([^;]*)\s*;\s*([^;]*)\s*;\s*([^;]*)\s*;\s*([^;]*)\s*;\s*([^;]*)\s*;\s*([^;]*)\s*;\s*([^#]*)\s*(#.*)?""".r
 
-  def fromLine(value: String): Either[String, ConformanceTest] =
+  def fromLine(value: String): Either[Throwable, ConformanceTest] = {
+    def unescapeThrowable(value: String): Either[Throwable, String] =
+      unescape(value).leftMap(error => new RuntimeException(error))
+
     value match {
-      case LineRegex(source, toUnicodeResult, toUnicodeStatus, toAsciiNResult, toAsciiNStatus, toAsciiT, toAsciiTStatus, comment) =>
-        (unescape(source), unescape(toUnicodeResult), unescape(toUnicodeStatus), unescape(toAsciiNResult), unescape(toAsciiNStatus), unescape(toAsciiT), unescape(toAsciiTStatus)).tupled.flatMap{
-          case (source, toUnicodeResult, toUnicodeStatus, toAsciiNResult, toAsciiNStatus, toAsciiT, toAsciiTStatus) =>
+      case LineRegex(source, toUnicodeResult, toUnicodeStatus, toAsciiNResult, toAsciiNStatus, toAsciiTResult, toAsciiTStatus, comment) =>
+        (unescapeThrowable(source), unescapeThrowable(toUnicodeResult), unescapeThrowable(toUnicodeStatus), unescapeThrowable(toAsciiNResult), unescapeThrowable(toAsciiNStatus), unescapeThrowable(toAsciiTResult), unescapeThrowable(toAsciiTStatus)).tupled.flatMap{
+          case (source, toUnicodeResult, toUnicodeStatus, toAsciiNResult, toAsciiNStatus, toAsciiTResult, toAsciiTStatus) =>
             (stringToStatusSet(toUnicodeStatus), stringToStatusSet(toAsciiNStatus), stringToStatusSet(toAsciiTStatus)).mapN{
               case (toUnicodeStatus, toAsciiNStatus, toAsciiTStatus) =>
+                // Empty toUnicodeStatus means no errors
+                // Empty toAsciiNStatus means same as toUnicodeStatus
+                // Empty toAsciiTStatus means same as toAsciiNStatus
+
+                val unicodeStatus: SortedSet[Status] = toUnicodeStatus.getOrElse(SortedSet.empty[Status])
+                val asciiNStatus: SortedSet[Status] = toAsciiNStatus.getOrElse(unicodeStatus)
+                val asciiTStatus: SortedSet[Status] = toAsciiTStatus.getOrElse(asciiNStatus)
+
                 val c: Option[String] =
-                  if (comment.trim.isEmpty) {
+                  if (comment.trim.isEmpty || comment.trim === "#") {
                     None
                   } else {
-                    Some(comment)
+                    Some(comment.trim.dropWhile(_ === '#'))
                   }
 
-                ConformanceTest(source, toUnicodeResult, toUnicodeStatus, toAsciiNResult, toAsciiNStatus, toAsciiT, toAsciiTStatus, c)
-            }
+                ConformanceTest(source, toUnicodeResult, unicodeStatus, toAsciiNResult, asciiNStatus, toAsciiTResult, asciiTStatus, c)
+            }.leftMap(statusError =>
+              new RuntimeException(s"Error when parsing one of the status lines in $value", statusError)
+            )
         }
       case _ =>
-        Left(s"Value is not a valid conformance test line: ${value}")
+        Left(new RuntimeException(s"Value is not a valid conformance test line: ${value}"))
     }
+  }
 
   sealed abstract class Status extends Product with Serializable
 
@@ -238,19 +254,19 @@ object ConformanceTest {
         override final def compare(x: Status, y: Status): Int =
           (x, y) match {
             case (x: Processing, y: Processing) =>
-              x.step.compare(y.step)
+              (x.section, x.subSection).compare((y.section, y.subSection))
             case (x: Validity, y: Validity) =>
-              x.step.compare(y.step)
+              (x.section, x.subSection).compare((y.section, y.subSection))
             case (x: UseSTD3ASCIIRules, y: UseSTD3ASCIIRules) =>
-              x.step.compare(y.step)
+              (x.section, x.subSection).compare((y.section, y.subSection))
             case (x: ToASCII, y: ToASCII) =>
-              x.step.compare(y.step)
+              (x.section, x.subSection).compare((y.section, y.subSection))
             case (x: Bidi, y: Bidi) =>
-              x.step.compare(y.step)
+              (x.section, x.subSection).compare((y.section, y.subSection))
             case (x: ContextJ, y: ContextJ) =>
-              x.step.compare(y.step)
+              (x.section, x.subSection).compare((y.section, y.subSection))
             case (x: ToUnicode, y: ToUnicode) =>
-              x.step.compare(y.step)
+              (x.section, x.subSection).compare((y.section, y.subSection))
             case (_: Processing, _) =>
               1
             case (_, _: Processing) =>
@@ -281,49 +297,43 @@ object ConformanceTest {
     implicit def orderingInstance: Ordering[Status] =
       hashAndOrderForStatus.toOrdering
 
-    final case class Processing(step: Long) extends Status
-    final case class Validity(step: Long) extends Status
-    final case class UseSTD3ASCIIRules(step: Long) extends Status
-    final case class ToASCII(step: Long) extends Status
-    final case class Bidi(step: Long) extends Status
-    final case class ContextJ(step: Long) extends Status
-    final case class ToUnicode(step: Long) extends Status
+    final case class Processing(section: Long, subSection: Option[Long]) extends Status
+    final case class Validity(section: Long, subSection: Option[Long]) extends Status
+    final case class UseSTD3ASCIIRules(section: Long, subSection: Option[Long]) extends Status
+    final case class ToASCII(section: Long, subSection: Option[Long]) extends Status
+    final case class Bidi(section: Long, subSection: Option[Long]) extends Status
+    final case class ContextJ(section: Long, subSection: Option[Long]) extends Status
+    final case class ToUnicode(section: Long, subSection: Option[Long]) extends Status
 
     private[this] final val StatusRegex =
-      """(P|V|U|A|B|C|X)(\d+)""".r
+      """(P|V|U|A|B|C|X)(\d+)(_\d+)?""".r
 
-    def fromString(value: String): Either[String, Status] =
+    def fromString(value: String): Either[Throwable, Status] =
       value.trim match {
-        case StatusRegex("P", step) =>
-          Either.catchNonFatal(step.toLong).map(step =>
-            Processing(step)
-          ).leftMap(_.getLocalizedMessage())
-        case StatusRegex("V", step) =>
-          Either.catchNonFatal(step.toLong).map(step =>
-            Validity(step)
-          ).leftMap(_.getLocalizedMessage())
-        case StatusRegex("U", step) =>
-          Either.catchNonFatal(step.toLong).map(step =>
-            UseSTD3ASCIIRules(step)
-          ).leftMap(_.getLocalizedMessage())
-        case StatusRegex("A", step) =>
-          Either.catchNonFatal(step.toLong).map(step =>
-            ToASCII(step)
-          ).leftMap(_.getLocalizedMessage())
-        case StatusRegex("B", step) =>
-          Either.catchNonFatal(step.toLong).map(step =>
-            Bidi(step)
-          ).leftMap(_.getLocalizedMessage())
-        case StatusRegex("C", step) =>
-          Either.catchNonFatal(step.toLong).map(step =>
-            ContextJ(step)
-          ).leftMap(_.getLocalizedMessage())
-        case StatusRegex("X", step) =>
-          Either.catchNonFatal(step.toLong).map(step =>
-            ToUnicode(step)
-          ).leftMap(_.getLocalizedMessage())
+        case StatusRegex(category, section, subSection) =>
+          (Either.catchNonFatal(section.toLong), Option(subSection).traverse(subSection => Either.catchNonFatal(subSection.tail.toLong))).tupled.flatMap{
+            case (section, subSection) =>
+              category match {
+                case "P" =>
+                  Processing(section, subSection).asRight[Throwable]
+                case "V" =>
+                  Validity(section, subSection).asRight[Throwable]
+                case "U" =>
+                  UseSTD3ASCIIRules(section, subSection).asRight[Throwable]
+                case "A" =>
+                  ToASCII(section, subSection).asRight[Throwable]
+                case "B" =>
+                  Bidi(section, subSection).asRight[Throwable]
+                case "C" =>
+                  ContextJ(section, subSection).asRight[Throwable]
+                case "X" =>
+                  ToUnicode(section, subSection).asRight[Throwable]
+                case otherwise =>
+                  Left(new RuntimeException(s"Unknown status category: ${otherwise}"))
+              }
+          }
         case _ =>
-          Left(s"Not a valid UTS-46 conformance status: ${value}")
+          Left(new RuntimeException(s"Not a valid UTS-46 conformance status: ${value}"))
       }
   }
 }

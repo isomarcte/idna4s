@@ -192,7 +192,14 @@ lazy val tests = crossProject(JVMPlatform, JSPlatform, NativePlatform)
         "org.typelevel.idna4s.tests.uts46."
       ).map(value => s"import ${value}${wildcardImport.value}").mkString("\n")
     },
-    consoleQuick / initialCommands := ""
+    consoleQuick / initialCommands := "",
+    Test / sourceGenerators ++= List(
+      (Test / sourceManaged)
+        .map(
+          UTS46ConformanceTestsCodeGen.unsafeGenerate(_, UnicodeVersion)
+        )
+        .taskValue
+    )
   )
   .jvmSettings(
     libraryDependencies ++= Seq(

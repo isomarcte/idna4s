@@ -9,19 +9,19 @@ import org.typelevel.idna4s.core._
 import scala.collection.immutable.SortedSet
 
 trait UTS46ConformanceTestBase {
-  protected def conformanceTestFileContents: String
+  protected def conformanceTestLines: Chain[String]
 
-  final def conformanceTestsFromFileContents: Ior[NonEmptyChain[String], SortedSet[ConformanceTest]] =
-    UTS46ConformanceTestBase.conformanceTestsFromFileContents(conformanceTestFileContents)
+  final lazy val conformanceTestsFromFileContents: Ior[NonEmptyChain[Throwable], SortedSet[ConformanceTest]] =
+    UTS46ConformanceTestBase.conformanceTestsFromLines(conformanceTestLines)
 }
 
 object UTS46ConformanceTestBase {
 
-  def conformanceTestsFromLines[F[_]: Foldable](lines: F[String]): Ior[NonEmptyChain[String], SortedSet[ConformanceTest]] =
+  def conformanceTestsFromLines[F[_]: Foldable](lines: F[String]): Ior[NonEmptyChain[Throwable], SortedSet[ConformanceTest]] =
     lines.parFoldMapA(line =>
       line.trim match {
         case line if line.startsWith("#") || line.isEmpty =>
-          SortedSet.empty[ConformanceTest].rightIor[NonEmptyChain[String]]
+          SortedSet.empty[ConformanceTest].rightIor[NonEmptyChain[Throwable]]
         case line =>
           Ior.fromEither(
             ConformanceTest.fromLine(line).bimap(
@@ -32,6 +32,6 @@ object UTS46ConformanceTestBase {
       }
     )
 
-  def conformanceTestsFromFileContents(value: String): Ior[NonEmptyChain[String], SortedSet[ConformanceTest]] =
+  def conformanceTestsFromFileContents(value: String): Ior[NonEmptyChain[Throwable], SortedSet[ConformanceTest]] =
     conformanceTestsFromLines(value.linesIterator.toList)
 }

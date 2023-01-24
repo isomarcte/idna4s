@@ -10,7 +10,7 @@ final class UTS46ConformanceTest extends DisciplineSuite {
   GeneratedUTS46ConformanceTest.unsafeConformanceTestsFromFileContents.foreach{
     case value@(_, lineNumber) =>
       test(s"ConformanceTest from line number: ${lineNumber}") {
-        assert(clue(value)._1.test.isEmpty)
+        assert(clue(clue(value)._1.test).isEmpty)
       }
   }
 }

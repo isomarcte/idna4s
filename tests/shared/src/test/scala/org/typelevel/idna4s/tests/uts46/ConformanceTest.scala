@@ -178,12 +178,6 @@ object ConformanceTest {
   implicit def orderingInstance: Ordering[ConformanceTest] =
     hashAndOrderForConformanceTest.toOrdering
 
-  private[this] final val UnescapeRegex0 =
-    """\\u(\p{XDigit}{4})""".r
-
-  private[this] final val UnescapeRegex1 =
-    """\\x\{(\p{XDigit}{4})\}""".r
-
   private[this] sealed abstract class UnescapeState extends Product with Serializable {
     import UnescapeState._
 
@@ -300,15 +294,24 @@ object ConformanceTest {
                 case UnescapeState.ExpectHexChar(isUStyleEscape, hexDigits) =>
                   x match {
                     case x if (x >= 'a' && x <= 'f') || (x >= 'A' && x <= 'F') || (x >= '0' && x <= '9') =>
-                      val state = (hexDigits :+ x) match {
+                      (hexDigits :+ x) match {
                         case hexDigits =>
-                          if (hexDigits.size >= 3) {
-                            UnescapeState.ExpectRightBrace(hexDigits)
+                          if (hexDigits.size >= 4) {
+                            if (isUStyleEscape) {
+                              // TODO: DRY this out with the above invocation
+                              CodePoint.fromString(hexDigits.mkString_("0x", "", "")) match {
+                                case Right(value) =>
+                                  loop(acc.appendCodePoint(value.value), None, rest)
+                                case Left(error) =>
+                                  Left(error)
+                              }
+                            } else {
+                              loop(acc, Some(UnescapeState.ExpectRightBrace(hexDigits)), rest)
+                            }
                           } else {
-                            UnescapeState.ExpectHexChar(isUStyleEscape, hexDigits)
+                            loop(acc, Some(UnescapeState.ExpectHexChar(isUStyleEscape, hexDigits)), rest)
                           }
                       }
-                      loop(acc, Some(state), rest)
                     case x =>
                       // Assume it this is not actually an escape sequence
                       loop(state.unwindIntoStringBuilder(acc).append(x), None, rest)

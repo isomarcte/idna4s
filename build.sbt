@@ -9,14 +9,15 @@ val Scala213                    = "2.13.10"
 val Scala3                      = "3.2.1"
 def DefaultScalaVersion: String = Scala213
 
-val catsCollectionsV = "0.9.5"
-val catsV            = "2.8.0"
-val disciplineMunitV = "2.0.0-M3"
-val icu4jV           = "72.1"
-val kittensV         = "3.0.0"
-val literallyV       = "1.1.0"
-val munitV           = "1.0.0-M6"
-val scalacheckV      = "1.17.0"
+val catsCollectionsV  = "0.9.5"
+val catsV             = "2.8.0"
+val disciplineMunitV  = "2.0.0-M3"
+val icu4jV            = "72.1"
+val kittensV          = "3.0.0"
+val literallyV        = "1.1.0"
+val munitV            = "1.0.0-M6"
+val scalaJavaLocalesV = "1.5.1"
+val scalacheckV       = "1.17.0"
 
 ThisBuild / crossScalaVersions := Seq(Scala212, Scala213, Scala3)
 ThisBuild / scalaVersion       := Scala213
@@ -142,6 +143,10 @@ lazy val core = crossProject(JVMPlatform, JSPlatform, NativePlatform)
         )
         .taskValue
     )
+  ).nativeSettings(
+    libraryDependencies ++= List("io.github.cquiroz" %%% "scala-java-locales" % scalaJavaLocalesV)
+  ).jsSettings(
+    libraryDependencies ++= List("io.github.cquiroz" %%% "scala-java-locales" % scalaJavaLocalesV)
   )
 
 lazy val scalacheck = crossProject(JVMPlatform, JSPlatform, NativePlatform)

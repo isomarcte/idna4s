@@ -54,7 +54,7 @@ sealed abstract class UTS46Config extends Serializable {
 object UTS46Config {
 
   val Strict: UTS46Config =
-    UTS46Config(
+    UTS46ConfigImpl(
       checkHyphens = true,
       checkBidi = true,
       checkJoiners = true,
@@ -77,21 +77,4 @@ object UTS46Config {
     override def withVerifyDNSLength(value: Boolean): UTS46Config =
       copy(verifyDnsLength = value)
   }
-
-  def apply(
-    checkHyphens: Boolean,
-    checkBidi: Boolean,
-    checkJoiners: Boolean,
-    useStd3ASCIIRules: Boolean,
-    transitionalProcessing: Boolean,
-    verifyDnsLength: Boolean
-  ): UTS46Config =
-    UTS46ConfigImpl(
-      checkHyphens,
-      checkBidi,
-      checkJoiners,
-      useStd3ASCIIRules,
-      transitionalProcessing,
-      verifyDnsLength
-    )
 }

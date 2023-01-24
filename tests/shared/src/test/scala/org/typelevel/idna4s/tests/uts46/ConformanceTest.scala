@@ -6,9 +6,11 @@ import cats.derived.semiauto
 import cats.syntax.all._
 import java.lang.StringBuilder
 import org.typelevel.idna4s.core._
+import org.typelevel.idna4s.core.uts46._
 import org.typelevel.idna4s.tests.uts46.ConformanceTest.Status
 import scala.annotation.tailrec
 import scala.collection.immutable.SortedSet
+import scala.collection.immutable.SortedMap
 
 final case class ConformanceTest(
   source: String,
@@ -19,9 +21,146 @@ final case class ConformanceTest(
   toAsciiTResult: String,
   toAsciiTStatus: SortedSet[Status],
   comment: Option[String]
-)
+) {
+  import ConformanceTest._
+
+  def applyToUnicode: Either[UTS46.UTS46FailureException, String] =
+    UTS46.toUnicodeRaw(UTS46Config.Strict.withUseStd3ASCIIRules(true).withTransitionalProcessing(false))(source)
+
+  def toUnicodeTest: Chain[Throwable] =
+    applyToUnicode match {
+      case Right(result) =>
+        NonEqualEncodingException.check(toUnicodeResult, result, Context.ToUnicode).fold(
+          Chain.empty[Throwable]
+        )(error =>
+          Chain.one(error)
+        )
+      case Left(error) =>
+        def statusErrors: Chain[Throwable] =
+          error.errors.reduceMapA(error =>
+            idnaExceptionToStatus(error, Context.ToUnicode).fold(
+              l => Ior.left(Chain.one(l)),
+              r => Ior.right(SortedSet(r))
+            )
+          ).flatMap(actualStatusSet =>
+            UnexpectedStatusSetException.check(toUnicodeStatus, actualStatusSet, Context.ToUnicode).fold(
+              Ior.right(()): Ior[Chain[Throwable], Unit]
+            )(error =>
+              Ior.left(Chain.one(error))
+            )
+          ).fold(
+            l => l,
+            _ => Chain.empty,
+            (l, _) => l
+          )
+
+        def resultErrors: Chain[Throwable] =
+          error.partiallyProcessedValue.fold(
+            Chain.one(MissingPartiallyProcessedValueException(toUnicodeResult)): Chain[Throwable]
+          )(value =>
+            NonEqualEncodingException.check(toUnicodeResult, value, Context.ToUnicode).fold(
+              Chain.empty[Throwable]
+            )(error =>
+              Chain.one(error)
+            )
+          )
+
+        statusErrors |+| resultErrors
+    }
+
+  def test: SortedMap[Context, NonEmptyChain[Throwable]] =
+    NonEmptyChain.fromChain(toUnicodeTest).fold(
+      SortedMap.empty[Context, NonEmptyChain[Throwable]]
+    )(errors =>
+      SortedMap(Context.ToUnicode -> errors)
+    )
+}
 
 object ConformanceTest {
+
+  sealed abstract class Context extends Product {
+    import Context._
+
+    final def asString: String = this match {
+      case ToUnicode => "toUnicode"
+      case ToASCIIN => "toAsciiN"
+      case ToASCIIT => "toAsciiT"
+    }
+  }
+
+  object Context {
+    case object ToUnicode extends Context
+    case object ToASCIIN extends Context
+    case object ToASCIIT extends Context
+
+    implicit final val hashAndOrderForContext: Hash[Context] with Order[Context] =
+      new Hash[Context] with Order[Context] {
+        override def hash(x: Context): Int =
+          x.hashCode
+
+        override def compare(x: Context, y: Context): Int =
+          (x, y) match {
+            case (ToUnicode, ToUnicode) => 0
+            case (ToASCIIN, ToASCIIN) => 0
+            case (ToASCIIT, ToASCIIT) => 0
+            case (ToUnicode, _) => 1
+            case (_, ToUnicode) => -1
+            case (ToASCIIN, _) => 1
+            case (_, ToASCIIN) => -1
+          }
+      }
+
+    implicit def ordering: Ordering[Context] =
+      hashAndOrderForContext.toOrdering
+  }
+
+  final case class MissingPartiallyProcessedValueException(expected: String) extends RuntimeException {
+    override final def getMessage: String = s"UTS-46 processing failed without yielding a partial result."
+  }
+
+  final class UnexpectedStatusSetException private (val expected: SortedSet[Status], val actual: SortedSet[Status], val context: Context) extends RuntimeException {
+    override final def getMessage: String = s"Expected ${expected} status set, but got $actual, in context $context"
+
+    override final def toString: String =
+      s"UnexpectedStatusSetException(expected = $expected, actual = $actual, context = $context)"
+  }
+
+  object UnexpectedStatusSetException {
+    def check(expected: SortedSet[Status], actual: SortedSet[Status], context: Context): Option[UnexpectedStatusSetException] =
+      if (expected =!= actual) {
+        Some(new UnexpectedStatusSetException(expected, actual, context))
+      } else {
+        None
+      }
+  }
+
+  final class UnexpectedIDNAException(val unexpected: IDNAException, val context: Context) extends RuntimeException {
+    override def getMessage: String = s"IDNAException ${unexpected}, does not map to any UTS-46 conformance status."
+
+    override final def toString: String =
+      s"UnexpectedIDNAException(unexpected = $unexpected, context = $context)"
+  }
+
+
+  def idnaExceptionToStatus(value: IDNAException, context: Context): Either[UnexpectedIDNAException, Status] = Left(new UnexpectedIDNAException(value, context))
+
+
+  final class NonEqualEncodingException private (val expected: String, val actual: String, val context: Context) extends RuntimeException {
+    override final def getMessage: String =
+      s"Unexpected result for ${context} operation. Expected $expected, but got $actual"
+
+    override final def toString: String =
+      s"NonEqualEncodingException(expected = $expected, actual = $actual, context = $context)"
+  }
+
+  object NonEqualEncodingException {
+    def check(expected: String, actual: String, context: Context): Option[NonEqualEncodingException] =
+      if (expected =!= actual) {
+        Option(new NonEqualEncodingException(expected, actual, context))
+      } else {
+        None
+      }
+  }
 
   implicit val hashAndOrderForConformanceTest: Hash[ConformanceTest] with Order[ConformanceTest] = {
     val order: Order[ConformanceTest] =

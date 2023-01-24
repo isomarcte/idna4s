@@ -204,7 +204,7 @@ private[scalacheck] trait ScalaCheckInstances extends Serializable {
         useStd3ASCIIRules <- Arbitrary.arbitrary[Boolean]
         transitionalProcessing <- Arbitrary.arbitrary[Boolean]
         verifyDnsLength <- Arbitrary.arbitrary[Boolean]
-      } yield UTS46Config(checkHyphens, checkBidi, checkJoiners, useStd3ASCIIRules, transitionalProcessing, verifyDnsLength)
+      } yield UTS46Config.Strict.withCheckHyphens(checkHyphens).withCheckBidi(checkBidi).withCheckJoiners(checkJoiners).withUseStd3ASCIIRules(useStd3ASCIIRules).withTransitionalProcessing(transitionalProcessing).withVerifyDNSLength(verifyDnsLength)
     )
 
   implicit final def cogenUTS46Config: Cogen[UTS46Config] =

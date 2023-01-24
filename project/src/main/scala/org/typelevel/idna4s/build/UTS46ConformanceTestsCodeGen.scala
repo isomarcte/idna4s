@@ -31,15 +31,20 @@ object UTS46ConformanceTestsCodeGen {
     val outputFile: File =
       dir / "org" / "typelevel" / "idna4s" / "tests" / "uts46" / s"${GeneratedTypeName}.scala"
 
-    conformanceTestFileContentsFromUnicodeVersion(unicodeVersion).map(lines =>
-      lines.filterNot(line =>
-        line.trim match {
-          case line =>
-            line.isEmpty || line.startsWith("#")
-        }
-      )
+    conformanceTestFileContentsFromUnicodeVersion(unicodeVersion).map(_.zipWithIndex.map{
+      case (line, lineNumber) => line -> (lineNumber + 1)
+    }).map(lines =>
+      lines.filterNot{
+        case (line, _) =>
+          line.trim match {
+            case line =>
+              line.isEmpty || line.startsWith("#")
+          }
+      }
     ).map(lines =>
-      lines.map(line => Lit.String(line))
+      lines.map{
+        case (line, index) => q"($line, $index)"
+      }
     ).map(generateSource).flatMap(tree =>
       Either.catchNonFatal(IO.write(outputFile, tree.syntax)).as(outputFile)
     )
@@ -56,14 +61,22 @@ object UTS46ConformanceTestsCodeGen {
 
   def generateSource(
     lines: List[Term]
-  ): Tree =
+  ): Tree = {
+    // Workaround method too large
+    val (part0, part1): (List[Term], List[Term]) =
+      lines.splitAt(lines.size/2)
+
     source"""
 package org.typelevel.idna4s.tests.uts46
 
 import cats.data._
 
-object ${Term.Name(GeneratedTypeName)} extends ${Init(Type.Name(BaseTypeName), scala.meta.Name(""), Nil)} {
-  override final val conformanceTestLines: Chain[String] = Chain(..$lines)
+object ${Term.Name(GeneratedTypeName)} extends ${Init(Type.Name(BaseTypeName), scala.meta.Name(""), Seq.empty)} {
+
+  private[this] final def conformanceTestLines0: Chain[(String, Int)] = Chain(..$part0)
+  private[this] final def conformanceTestLines1: Chain[(String, Int)] = Chain(..$part1)
+  override final lazy val conformanceTestLines: Chain[(String, Int)] = conformanceTestLines0 ++ conformanceTestLines1
 }
 """
+  }
 }

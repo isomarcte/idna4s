@@ -8,7 +8,6 @@ import org.scalacheck.Prop._
 import org.scalacheck._
 import org.typelevel.idna4s.core.uts46._
 import org.typelevel.idna4s.scalacheck.all._
-import scala.jdk.CollectionConverters._
 
 trait UTS46PlatformTests extends DisciplineSuite {
 

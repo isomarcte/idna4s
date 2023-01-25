@@ -7,9 +7,10 @@ import munit.DisciplineSuite
 import scala.collection.immutable.SortedMap
 
 final class UTS46ConformanceTest extends DisciplineSuite {
+
   GeneratedUTS46ConformanceTest.unsafeConformanceTestsFromFileContents.foreach{
-    case value@(_, lineNumber) =>
-      test(s"ConformanceTest from line number: ${lineNumber}") {
+    case value =>
+      test("UTS-46 Conformance test") {
         assert(clue(clue(value)._1.test).isEmpty)
       }
   }

@@ -6,11 +6,12 @@ import cats.derived.semiauto
 import cats.syntax.all._
 import java.lang.StringBuilder
 import org.typelevel.idna4s.core._
+import org.typelevel.idna4s.core.bootstring.codePointsAsChain
 import org.typelevel.idna4s.core.uts46._
 import org.typelevel.idna4s.tests.uts46.ConformanceTest.Status
 import scala.annotation.tailrec
-import scala.collection.immutable.SortedSet
 import scala.collection.immutable.SortedMap
+import scala.collection.immutable.SortedSet
 
 final case class ConformanceTest(
   source: String,
@@ -146,11 +147,17 @@ object ConformanceTest {
 
 
   final class NonEqualEncodingException private (val expected: String, val actual: String, val context: Context) extends RuntimeException {
+    lazy val expectedCodePoints: Chain[Int] =
+      codePointsAsChain(expected)
+
+    lazy val actualCodePoints: Chain[Int] =
+      codePointsAsChain(actual)
+
     override final def getMessage: String =
-      s"Unexpected result for ${context} operation. Expected $expected, but got $actual"
+      s"Unexpected result for ${context} operation. Expected $expected, but got $actual. Code points in expected: $expectedCodePoints, code points in actual: $actualCodePoints."
 
     override final def toString: String =
-      s"NonEqualEncodingException(expected = $expected, actual = $actual, context = $context)"
+      s"NonEqualEncodingException(expected = $expected, actual = $actual, context = $context, expectedCodePoints = $expectedCodePoints, actualCodePoints = $actualCodePoints)"
   }
 
   object NonEqualEncodingException {
@@ -377,10 +384,10 @@ object ConformanceTest {
                   if (comment.trim.isEmpty || comment.trim === "#") {
                     None
                   } else {
-                    Some(comment.trim.dropWhile(_ === '#'))
+                    Some(comment)
                   }
 
-                ConformanceTest(source, toUnicodeResult, unicodeStatus, toAsciiNResult, asciiNStatus, toAsciiTResult, asciiTStatus, c)
+                ConformanceTest(source.trim, toUnicodeResult.trim, unicodeStatus, toAsciiNResult.trim, asciiNStatus, toAsciiTResult.trim, asciiTStatus, c)
             }.leftMap(statusError =>
               new RuntimeException(s"Error when parsing one of the status lines in $value", statusError)
             )

@@ -520,9 +520,10 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
         }
       }
 
-    Ior.fromEither(
-      CodePointMapper.mapCodePoints(useStd3ASCIIRules, transitionalProcessing)(value).map(nfc)
-    ).leftMap(NonEmptyChain.one[IDNAException]).flatMap(value =>
+    CodePointMapper.mapCodePoints(useStd3ASCIIRules, transitionalProcessing)(value).map(nfc).fold(
+      error => Ior.both(error.errors, error.partiallyMappedInput),
+      mapped => Ior.right(mapped)
+    ).flatMap(value =>
       (toLabels(value, Chain.empty).uncons match {
         case (label, labels) =>
           processLabel(label).map(NonEmptyChain.one) match {
@@ -724,6 +725,13 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
 
       override def toString: String =
         s"EmptyRootLabelException(getLocalizedMessage = ${getLocalizedMessage})"
+    }
+
+    private[UTS46] final case class WrappedCodePointMappingException(cause: CodePointMapper.CodePointMappingException) extends UTS46Exception {
+      override final def getCause: Throwable = cause
+
+      override final def getMessage: String =
+        s"Failure occurred during code point mapping stage: ${cause.getMessage}"
     }
   }
 }

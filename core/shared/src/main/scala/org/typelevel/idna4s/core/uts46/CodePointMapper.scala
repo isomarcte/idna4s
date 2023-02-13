@@ -32,6 +32,7 @@ import scala.collection.immutable.IntMap
 import scala.util.control.NoStackTrace
 
 object CodePointMapper extends GeneratedCodePointMapper {
+  import CodePointMappingException._
 
   // Sentinel values for working with the asciiCodePointMap array
   final private val ASCII_DISALLOWED_STD3_VALID = -1
@@ -124,9 +125,8 @@ object CodePointMapper extends GeneratedCodePointMapper {
               if (useStd3ASCIIRules) {
                 loop(
                   acc.appendCodePoint(ReplacementCharacter),
-                  CodePointMappingException(
+                  DisallowedCodePointException(
                     index,
-                    "Disallowed code point in input.",
                     CodePoint.unsafeFromInt(value)) +: errors,
                   nextIndex
                 )
@@ -162,9 +162,8 @@ object CodePointMapper extends GeneratedCodePointMapper {
             // DISALLOWED
             loop(
               acc.appendCodePoint(ReplacementCharacter),
-              CodePointMappingException(
+              DisallowedCodePointException(
                 index,
-                "Disallowed code point in input.",
                 CodePoint.unsafeFromInt(value)) +: errors,
               nextIndex
             )
@@ -196,9 +195,8 @@ object CodePointMapper extends GeneratedCodePointMapper {
             if (useStd3ASCIIRules) {
               loop(
                 acc.appendCodePoint(ReplacementCharacter),
-                CodePointMappingException(
+                DisallowedCodePointException(
                   index,
-                  "Disallowed code point in input.",
                   CodePoint.unsafeFromInt(value)) +: errors,
                 nextIndex
               )
@@ -210,9 +208,8 @@ object CodePointMapper extends GeneratedCodePointMapper {
             if (useStd3ASCIIRules) {
               loop(
                 acc.appendCodePoint(ReplacementCharacter),
-                CodePointMappingException(
+                DisallowedCodePointException(
                   index,
-                  "Disallowed code point in input.",
                   CodePoint.unsafeFromInt(value)) +: errors,
                 nextIndex
               )
@@ -224,9 +221,8 @@ object CodePointMapper extends GeneratedCodePointMapper {
             if (useStd3ASCIIRules) {
               loop(
                 acc.appendCodePoint(ReplacementCharacter),
-                CodePointMappingException(
+                DisallowedCodePointException(
                   index,
-                  "Disallowed code point in input.",
                   CodePoint.unsafeFromInt(value)) +: errors,
                 nextIndex
               )
@@ -370,11 +366,28 @@ object CodePointMapper extends GeneratedCodePointMapper {
     final override def getMessage: String =
       toString
 
-    final override def toString: String =
+    override def toString: String =
       s"CodePointMappingException(message = $message, failureIndex = $failureIndex, codePoint = $codePoint)"
   }
 
   object CodePointMappingException {
+    sealed abstract class DisallowedCodePointException extends CodePointMappingException {
+      override final val message: String = "Disallowed code point in input."
+
+      override final def toString: String =
+        s"DisallowedCodePointException(message = $message, failureIndex = $failureIndex, codePoint = $codePoint)"
+    }
+
+    object DisallowedCodePointException {
+      private[this] final case class DisallowedCodePointExceptionImpl(override val failureIndex: Int, override val codePoint: CodePoint) extends DisallowedCodePointException
+
+      private[idna4s] def apply(
+        failureIndex: Int,
+        codePoint: CodePoint
+      ): DisallowedCodePointException =
+        DisallowedCodePointExceptionImpl(failureIndex, codePoint)
+    }
+
     final private[this] case class CodePointMappingExceptionImpl(
         override val failureIndex: Int,
         override val message: String,

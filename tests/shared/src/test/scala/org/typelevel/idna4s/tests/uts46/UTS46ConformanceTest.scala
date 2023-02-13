@@ -8,10 +8,10 @@ import scala.collection.immutable.SortedMap
 
 final class UTS46ConformanceTest extends DisciplineSuite {
 
-  GeneratedUTS46ConformanceTest.unsafeConformanceTestsFromFileContents.foreach{
-    case value =>
-      test("UTS-46 Conformance test") {
+  test("UTS-46 Conformance test") {
+    GeneratedUTS46ConformanceTest.unsafeConformanceTestsFromFileContents.foreach{
+      case value =>
         assert(clue(clue(value)._1.test).isEmpty)
-      }
+    }
   }
 }

@@ -598,7 +598,7 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
   sealed abstract class UTS46Exception extends IDNAException with NoStackTrace
 
   object UTS46Exception {
-    private[UTS46] case object HyphenMinusInThirdAndFourthPositionException extends UTS46Exception {
+    private[idna4s] case object HyphenMinusInThirdAndFourthPositionException extends UTS46Exception {
       override val getMessage: String =
         "Hyphen-minus (0x002d) code point found in positions 3 and 4 of label and checkHyphens is on. UTS-46 forbids this."
 
@@ -606,7 +606,7 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
         s"HyphenMinusInThirdAndFourthPositionException(getLocalizedMessage = ${getLocalizedMessage})"
     }
 
-    private[UTS46] case object LabelBeginsWithHyphenMinusException extends UTS46Exception {
+    private[idna4s] case object LabelBeginsWithHyphenMinusException extends UTS46Exception {
       override val getMessage: String =
         "Label begins with hyphen-minus (0x002d) and checkHyphens is on. UTS-46 forbids this."
 
@@ -614,7 +614,7 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
         s"LabelBeginsWithHyphenMinusException(getLocalizedMessage = ${getLocalizedMessage})"
     }
 
-    private[UTS46] case object LabelEndsWithHyphenMinusException extends UTS46Exception {
+    private[idna4s] case object LabelEndsWithHyphenMinusException extends UTS46Exception {
       override val getMessage: String =
         "Label ends with hyphen-minus (0x002d) and checkHyphens is on. UTS-46 forbids this."
 
@@ -622,7 +622,7 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
         s"LabelEndsWithHyphenMinusException(getLocalizedMessage = ${getLocalizedMessage})"
     }
 
-    private[UTS46] final case class LabelStartsWithGeneralMarkException(cp: Int) extends UTS46Exception {
+    private[idna4s] final case class LabelStartsWithGeneralMarkException(cp: Int) extends UTS46Exception {
       private def description: String =
         CodePoint.descriptionFromInt(cp)
 
@@ -633,7 +633,7 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
         s"LabelStartsWithGeneralMarkException(cp = ${description}, getLocalizedMessage = ${getLocalizedMessage})"
     }
 
-    private[UTS46] case object ContextJViolationForNonJoinerException extends UTS46Exception {
+    private[idna4s] case object ContextJViolationForNonJoinerException extends UTS46Exception {
       override val getMessage: String =
         "ContextJ violation found for zero width non-joiner code point 0x200c. If present in a label, it must follow a code point which has a canonical combining class of Virama or it must follow a code point with a joining type of L (Left joining) or D (Dual joining) followed by zero or more code points with a joining type of T (transparent), then 0x200c, then be have zero or more code points after with a T joining type then a code point with a joining type of R (Right joining) or D."
 
@@ -641,7 +641,7 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
         s"ContextJViolationForNonJoinerException(getLocalizedMessage = ${getLocalizedMessage})"
     }
 
-    private[UTS46] case object ContextJViolationForJoinerException extends UTS46Exception {
+    private[idna4s] case object ContextJViolationForJoinerException extends UTS46Exception {
       override val getMessage: String =
         "ContextJ violation found for zero width joiner code point 0x200d. If present in a label, it must follow a code point which has a canonical combining class of Virama, but did not."
 
@@ -649,7 +649,7 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
         s"ContextJViolationForNonJoinerException(getLocalizedMessage = ${getLocalizedMessage})"
     }
 
-    private[UTS46] final case class InvalidBidiTypeForFirstCodePointException(codePoint: Int, bidiType: String) extends UTS46Exception {
+    private[idna4s] final case class InvalidBidiTypeForFirstCodePointException(codePoint: Int, bidiType: String) extends UTS46Exception {
       override def getMessage: String =
         s"Invalid bidirectional type for first code point in label. Expected L, R, or AL, got ${bidiType}. Code point: ${CodePoint.descriptionFromInt(codePoint)}"
 
@@ -657,7 +657,7 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
         s"InvalidBidiTypeForFirstCodePointException(codePoint = ${codePoint}, bidiType = ${bidiType})"
     }
 
-    private[UTS46] final case class InvalidBidiTypeForRTLLabelException(codePoint: Int, bidiType: String) extends UTS46Exception {
+    private[idna4s] final case class InvalidBidiTypeForRTLLabelException(codePoint: Int, bidiType: String) extends UTS46Exception {
       override def getMessage: String =
         s"In an RTL label, only characters with the Bidi properties R, AL, AN, EN, ES, CS, ET, ON, BN, or NSM are allowed, but got ${bidiType} for code point: ${CodePoint.descriptionFromInt(codePoint)}"
 
@@ -665,7 +665,7 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
         s"InvalidBidiTypeForRTLLabelException(codePoint = ${CodePoint.descriptionFromInt(codePoint)}, bidiType = ${bidiType})"
     }
 
-    private[UTS46] final case class InvalidBidiTypeForLTRLabelException(codePoint: Int, bidiType: String) extends UTS46Exception {
+    private[idna4s] final case class InvalidBidiTypeForLTRLabelException(codePoint: Int, bidiType: String) extends UTS46Exception {
       override def getMessage: String =
         s"In an LTR label, only characters with the Bidi properties L, EN, ES, CS, ET, ON, BN, or NSM are allowed, but got ${bidiType} for code point: ${CodePoint.descriptionFromInt(codePoint)}"
 
@@ -673,7 +673,7 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
         s"InvalidBidiTypeForLTRLabelException(codePoint = ${CodePoint.descriptionFromInt(codePoint)}, bidiType = ${bidiType})"
     }
 
-    private[UTS46] case object MutuallyExclusiveBidiNumberTypesException extends UTS46Exception {
+    private[idna4s] case object MutuallyExclusiveBidiNumberTypesException extends UTS46Exception {
       override val getMessage: String =
         "In an RTL label, if an EN is present, no AN may be present, and vice versa, however this label has both."
 
@@ -681,7 +681,7 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
         s"MutuallyExclusiveBidiNumberTypesException(getLocalizedMessage = ${getLocalizedMessage})"
     }
 
-    private[UTS46] case object RTLLabelDidNotEndWithCorrectBidiTypeException extends UTS46Exception {
+    private[idna4s] case object RTLLabelDidNotEndWithCorrectBidiTypeException extends UTS46Exception {
       override val getMessage: String =
         "In an RTL label, the end of the label must be a character with Bidi property R, AL, EN, or AN, followed by zero or more characters with Bidi property NSM, but this was not the case."
 
@@ -689,7 +689,7 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
         s"RTLLabelDidNotEndWithCorrectBidiTypeException(getLocalizedMessage = ${getLocalizedMessage})"
     }
 
-    private[UTS46] case object LTRLabelDidNotEndWithCorrectBidiTypeException extends UTS46Exception {
+    private[idna4s] case object LTRLabelDidNotEndWithCorrectBidiTypeException extends UTS46Exception {
       override val getMessage: String =
         "In an LTR label, the end of the label must be a character with Bidi property L or EN, followed by zero or more characters with Bidi property NSM, but this was not the case."
 
@@ -697,14 +697,14 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
         s"LTRLabelDidNotEndWithCorrectBidiTypeException(getLocalizedMessage = ${getLocalizedMessage})"
     }
 
-    private[UTS46] case object NonRootEmptyLabelException extends UTS46Exception {
+    private[idna4s] case object NonRootEmptyLabelException extends UTS46Exception {
       override val getMessage: String = "An empty label was present but it was not the root label. This is forbidden."
 
       override def toString: String =
         s"NonRootEmptyLabelException(getLocalizedMessage = ${getLocalizedMessage})"
     }
 
-    private[UTS46] case class LabelExceedsMaxLengthException(size: Long) extends UTS46Exception {
+    private[idna4s] case class LabelExceedsMaxLengthException(size: Long) extends UTS46Exception {
       // TODO: Include offending label? Need to check Unicode security recommendations.
       override def getMessage: String = s"A domain label is required to be between 1 and 63 characters when represented as ASCII, but got ${size}."
 
@@ -712,7 +712,7 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
         s"LabelExceedsMaxLengthException(size = ${size}, getLocalizedMessage = ${getLocalizedMessage})"
     }
 
-    private[UTS46] case class DomainNameExceedsMaxLengthException(size: Long) extends UTS46Exception {
+    private[idna4s] case class DomainNameExceedsMaxLengthException(size: Long) extends UTS46Exception {
       // TODO: Include offending domain? Need to check Unicode security recommendations.
       override def getMessage: String = s"A domain name must be between 1 and 253 characters when represented as ASCII, but got ${size}."
 
@@ -720,14 +720,14 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
         s"DomainNameExceedsMaxLengthException(size = ${size}, getLocalizedMessage = ${getLocalizedMessage})"
     }
 
-    private[UTS46] case object EmptyRootLabelException extends UTS46Exception {
+    private[idna4s] case object EmptyRootLabelException extends UTS46Exception {
       override val getMessage: String = "The domain ends with the empty root label. While this is a valid domain, UTS-46 forbids this notation."
 
       override def toString: String =
         s"EmptyRootLabelException(getLocalizedMessage = ${getLocalizedMessage})"
     }
 
-    private[UTS46] final case class WrappedCodePointMappingException(cause: CodePointMapper.CodePointMappingException) extends UTS46Exception {
+    private[idna4s] final case class WrappedCodePointMappingException(cause: CodePointMapper.CodePointMappingException) extends UTS46Exception {
       override final def getCause: Throwable = cause
 
       override final def getMessage: String =

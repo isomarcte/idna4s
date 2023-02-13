@@ -143,8 +143,13 @@ object ConformanceTest {
   }
 
 
-  def idnaExceptionToStatus(value: IDNAException, context: Context): Either[UnexpectedIDNAException, Status] = Left(new UnexpectedIDNAException(value, context))
-
+  def idnaExceptionToStatus(value: IDNAException, context: Context): Either[UnexpectedIDNAException, Status] =
+    value match {
+      case _: CodePointMapper.CodePointMappingException.DisallowedCodePointException =>
+        Right(Status.Processing(1L, None))
+      case _ =>
+        Left(new UnexpectedIDNAException(value, context))
+    }
 
   final class NonEqualEncodingException private (val expected: String, val actual: String, val context: Context) extends RuntimeException {
     lazy val expectedCodePoints: Chain[Int] =

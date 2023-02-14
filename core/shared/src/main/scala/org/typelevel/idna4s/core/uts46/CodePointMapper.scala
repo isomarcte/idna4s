@@ -435,30 +435,47 @@ object CodePointMapper extends GeneratedCodePointMapper {
      */
     def errors: NonEmptyChain[CodePointMappingException]
 
+    /** The input string, mapped as much as possible, but with disallowed code
+      * points left in the input.
+      *
+      * This is needed because UTS-46 requires that in the event of disallowed
+      * code points in the input, the remainder of the UTS-46 algorithm should
+      * be run over the partially mapped input, with the disallowed code
+      * points left in the input. Removing/replacing them can change the
+      * validation checks later in UTS-46.
+      *
+      * @note ''Important'' this ''MUST NOT'' be rendered to the user.
+      */
+    def unsafePartiallyMappedInput: String
+
     /**
-     * The input string, mapped as much as was possible. Code points which failed replaced with
-     * the Unicode replacement character � (0xFFFD). Returning this value on failure is mandated
-     * by UTS-46.
+     * The input string, mapped as much as was possible and safe to be
+     * rendered in errors and to humans. Code points which failed replaced
+     * with the Unicode replacement character � (0xFFFD). Returning this value
+     * on failure is mandated by UTS-46.
      */
-    def partiallyMappedInput: String
+    final def renderablePartiallyMappedInput: String =
+
 
     final override def getMessage: String =
       toString
 
     final override def toString: String =
-      s"MappingException(errors = ${errors}, partiallyMappedInput = ${partiallyMappedInput})"
+      s"MappingException(errors = ${errors}, renderablePartiallyMappedInput = ${renderablePartiallyMappedInput})"
   }
 
   object MappingException {
     final private[this] case class MappingExceptionImpl(
         override val errors: NonEmptyChain[CodePointMappingException],
-        override val partiallyMappedInput: String)
+        override val unsafePartiallyMappedInput: String,
+        override val renderablePartiallyMappedInput: String)
         extends MappingException
 
     private[idna4s] def apply(
         errors: NonEmptyChain[CodePointMappingException],
-        partiallyMappedInput: String): MappingException =
-      MappingExceptionImpl(errors, partiallyMappedInput)
+        unsafePartiallyMappedInput: String,
+        renderablePartiallyMappedInput: String): MappingException =
+      MappingExceptionImpl(errors, unsafePartiallyMappedInput, partiallyMappedInput)
 
     implicit val hashAndOrderForMappingException
         : Hash[MappingException] with Order[MappingException] =

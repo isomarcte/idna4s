@@ -521,7 +521,7 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
       }
 
     CodePointMapper.mapCodePoints(useStd3ASCIIRules, transitionalProcessing)(value).map(nfc).fold(
-      error => Ior.both(error.errors, error.partiallyMappedInput),
+      error => Ior.both(error.errors, error.unsafePartiallyMappedInput),
       mapped => Ior.right(mapped)
     ).flatMap(value =>
       (toLabels(value, Chain.empty).uncons match {

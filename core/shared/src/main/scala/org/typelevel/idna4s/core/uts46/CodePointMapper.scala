@@ -399,22 +399,6 @@ object CodePointMapper extends GeneratedCodePointMapper {
   }
 
   object CodePointMappingException {
-    sealed abstract class DisallowedCodePointException extends CodePointMappingException {
-      override final val message: String = "Disallowed code point in input."
-
-      override final def toString: String =
-        s"DisallowedCodePointException(message = $message, failureIndex = $failureIndex, codePoint = $codePoint)"
-    }
-
-    object DisallowedCodePointException {
-      private[this] final case class DisallowedCodePointExceptionImpl(override val failureIndex: Int, override val codePoint: CodePoint) extends DisallowedCodePointException
-
-      private[idna4s] def apply(
-        failureIndex: Int,
-        codePoint: CodePoint
-      ): DisallowedCodePointException =
-        DisallowedCodePointExceptionImpl(failureIndex, codePoint)
-    }
 
     final private[this] case class CodePointMappingExceptionImpl(
         override val inputFailureIndex: Int,
@@ -457,19 +441,6 @@ object CodePointMapper extends GeneratedCodePointMapper {
      * point.
      */
     def errors: NonEmptyChain[CodePointMappingException]
-
-    /** The input string, mapped as much as possible, but with disallowed code
-      * points left in the input.
-      *
-      * This is needed because UTS-46 requires that in the event of disallowed
-      * code points in the input, the remainder of the UTS-46 algorithm should
-      * be run over the partially mapped input, with the disallowed code
-      * points left in the input. Removing/replacing them can change the
-      * validation checks later in UTS-46.
-      *
-      * @note ''Important'' this ''MUST NOT'' be rendered to the user.
-      */
-    def unsafePartiallyMappedInput: String
 
     /**
      * The input string, mapped as much as was possible. Code points which were disallowed in

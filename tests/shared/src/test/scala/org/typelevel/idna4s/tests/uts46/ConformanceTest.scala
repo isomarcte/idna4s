@@ -6,7 +6,6 @@ import cats.derived.semiauto
 import cats.syntax.all._
 import java.lang.StringBuilder
 import org.typelevel.idna4s.core._
-import org.typelevel.idna4s.core.bootstring.codePointsAsChain
 import org.typelevel.idna4s.core.uts46._
 import org.typelevel.idna4s.tests.uts46.ConformanceTest.Status
 import scala.annotation.tailrec
@@ -145,7 +144,7 @@ object ConformanceTest {
 
   def idnaExceptionToStatus(value: IDNAException, context: Context): Either[UnexpectedIDNAException, Status] =
     value match {
-      case _: CodePointMapper.CodePointMappingException.DisallowedCodePointException =>
+      case _: CodePointMapper.CodePointMappingException =>
         Right(Status.Processing(1L, None))
       case _ =>
         Left(new UnexpectedIDNAException(value, context))
@@ -385,6 +384,29 @@ object ConformanceTest {
                 val asciiNStatus: SortedSet[Status] = toAsciiNStatus.getOrElse(unicodeStatus)
                 val asciiTStatus: SortedSet[Status] = toAsciiTStatus.getOrElse(asciiNStatus)
 
+                // Blank toUnicodeResult means same as source
+                val unicodeResult: String =
+                  if (toUnicodeResult.trim.isEmpty) {
+                    source
+                  } else {
+                    toUnicodeResult.trim
+                  }
+                // Blank toAsciiNResult means same as unicodeResult
+                val asciiNResult: String =
+                  if (toAsciiNResult.trim.isEmpty) {
+                    unicodeResult
+                  } else {
+                    toAsciiNResult.trim
+                  }
+                // Blank toAsciiTResult means same as asciiNResult
+                val asciiTResult: String =
+                  if (toAsciiTResult.trim.isEmpty) {
+                    asciiNResult
+                  } else {
+                    toAsciiTResult.trim
+                  }
+
+
                 val c: Option[String] =
                   if (comment.trim.isEmpty || comment.trim === "#") {
                     None
@@ -392,7 +414,7 @@ object ConformanceTest {
                     Some(comment)
                   }
 
-                ConformanceTest(source.trim, toUnicodeResult.trim, unicodeStatus, toAsciiNResult.trim, asciiNStatus, toAsciiTResult.trim, asciiTStatus, c)
+                ConformanceTest(source.trim, unicodeResult, unicodeStatus, asciiNResult, asciiNStatus, asciiTResult, asciiTStatus, c)
             }.leftMap(statusError =>
               new RuntimeException(s"Error when parsing one of the status lines in $value", statusError)
             )

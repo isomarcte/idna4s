@@ -42,36 +42,35 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
     process(checkHyphens = checkHyphens, checkBidi = checkBidi, checkJoiners = checkJoiners, useStd3ASCIIRules = useStd3ASCIIRules, transitionalProcessing = transitionalProcessing, value = value).flatMap(labels =>
       labels.nonEmptyTraverse(label =>
         encodeToPunycodeIfNeeded(label).fold(
-          e => Ior.both(NonEmptyChain(e), label),
-          label => Ior.right(label)
+          e => Writer(Chain.one(e: IDNAException), label),
+          _.pure[Writer[Chain[IDNAException], *]]
         )
       )
     ).flatMap(labels =>
       if (verifyDnsLength) {
-        NonEmptyChain.fromChain(checkDnsLength(labels)).fold(
-          Ior.right(labels): Ior[NonEmptyChain[IDNAException], NonEmptyChain[String]]
-        )(errors =>
-          Ior.both(errors, labels)
-        )
+        checkDnsLength(labels).widen[IDNAException].tell.as(labels)
       } else {
-        Ior.right(labels)
+        labels.pure[Writer[Chain[IDNAException], *]]
       }
-    ).fold(
-      errors => Left(UTS46FailureException(errors, None)): Either[UTS46FailureException, String],
-      labels => Right(labels.mkString_(FULL_STOP.toString)),
-      {
-        case (errors, labels) => Left(UTS46FailureException(errors, Some(labels.mkString_(FULL_STOP.toString))))
-      }
-    )
+    ) match {
+      case result => handleResult(result)
+    }
 
   def toUnicodeRaw(checkHyphens: Boolean, checkBidi: Boolean, checkJoiners: Boolean, useStd3ASCIIRules: Boolean, transitionalProcessing: Boolean)(value: String): Either[UTS46FailureException, String] =
-    process(checkHyphens = checkHyphens, checkBidi = checkBidi, checkJoiners = checkJoiners, useStd3ASCIIRules = useStd3ASCIIRules, transitionalProcessing = transitionalProcessing, value = value).fold(
-      errors => Left(UTS46FailureException(errors, None)): Either[UTS46FailureException, String],
-      labels => Right(labels.mkString_(FULL_STOP.toString)),
-      {
-        case (errors, labels) => Left(UTS46FailureException(errors, Some(labels.mkString_(FULL_STOP.toString))))
-      }
-    )
+    process(checkHyphens = checkHyphens, checkBidi = checkBidi, checkJoiners = checkJoiners, useStd3ASCIIRules = useStd3ASCIIRules, transitionalProcessing = transitionalProcessing, value = value) match {
+      case result => handleResult(result)
+    }
+
+  private def handleResult(value: Writer[Chain[IDNAException], NonEmptyChain[String]]): Either[UTS46FailureException, String] =
+    value.run match {
+      case (errors, labels) =>
+        val result: String = labels.mkString_(FULL_STOP.toString)
+        NonEmptyChain.fromChain(errors).fold(
+          Right(result): Either[UTS46FailureException, String]
+        )(errors =>
+          Left(UTS46FailureException(errors, result))
+        )
+    }
 
   // A Bidi domain name is a domain name containing at least one character
   // with Bidi_Class R, AL, or AN. See [IDNA2008] RFC 5893, Section 1.4.
@@ -454,7 +453,7 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
     loop(Chain.empty, None, None, BidiNumberTypeError(false), BidiEndLabelValid(false), 0, 0)
   }
 
-  private def process(checkHyphens: Boolean, checkBidi: Boolean, checkJoiners: Boolean, useStd3ASCIIRules: Boolean, transitionalProcessing: Boolean, value: String): Ior[NonEmptyChain[IDNAException], NonEmptyChain[String]] = {
+  private def process(checkHyphens: Boolean, checkBidi: Boolean, checkJoiners: Boolean, useStd3ASCIIRules: Boolean, transitionalProcessing: Boolean, value: String): Writer[Chain[IDNAException], NonEmptyChain[String]] = {
 
     // The bidirectional rules apply if checkBidi is true _and_ the intput is
     // a bidi domain name.
@@ -579,20 +578,23 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
   sealed abstract class UTS46FailureException extends IDNAException with NoStackTrace {
     def errors: NonEmptyChain[IDNAException]
 
-    def partiallyProcessedValue: Option[String]
+    def renderablePartiallyMappedInput: String
 
     override final def getMessage: String =
       s"""Errors encountered during UTS-46 processing: ${errors.map(_.getLocalizedMessage).mkString_(", ")}"""
 
     override final def toString: String =
-      s"UTS46FailureException(errors = ${errors})"
+      s"UTS46FailureException(errors = ${errors}, renderablePartiallyMappedInput = ${renderablePartiallyMappedInput})"
   }
 
   object UTS46FailureException {
-    private[this] final case class UTS46FailureExceptionImpl(override val errors: NonEmptyChain[IDNAException], override val partiallyProcessedValue: Option[String]) extends UTS46FailureException
+    private[this] final case class UTS46FailureExceptionImpl(override val errors: NonEmptyChain[IDNAException], override val renderablePartiallyMappedInput: String) extends UTS46FailureException
 
-    private[UTS46] def apply(errors: NonEmptyChain[IDNAException], partiallyProcessedValue: Option[String]): UTS46FailureException =
-      UTS46FailureExceptionImpl(errors, partiallyProcessedValue)
+    private[this] def replaceDiallowedCodePoints(value: String): String =
+      ???
+
+    private[UTS46] def apply(errors: NonEmptyChain[IDNAException], renderablePartiallyMappedInput: String): UTS46FailureException =
+      UTS46FailureExceptionImpl(errors, replaceDiallowedCodePoints(renderablePartiallyMappedInput))
   }
 
   sealed abstract class UTS46Exception extends IDNAException with NoStackTrace

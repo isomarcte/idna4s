@@ -40,7 +40,7 @@ final case class ConformanceTest(
           error.errors.reduceMapA(error =>
             idnaExceptionToStatus(error, Context.ToUnicode).fold(
               l => Ior.left(Chain.one(l)),
-              r => Ior.right(SortedSet(r))
+              r => Ior.right(r.toSortedSet)
             )
           ).flatMap(actualStatusSet =>
             UnexpectedStatusSetException.check(toUnicodeStatus, actualStatusSet, Context.ToUnicode).fold(
@@ -55,14 +55,10 @@ final case class ConformanceTest(
           )
 
         def resultErrors: Chain[Throwable] =
-          error.partiallyProcessedValue.fold(
-            Chain.one(MissingPartiallyProcessedValueException(toUnicodeResult)): Chain[Throwable]
-          )(value =>
-            NonEqualEncodingException.check(toUnicodeResult, value, Context.ToUnicode).fold(
-              Chain.empty[Throwable]
-            )(error =>
-              Chain.one(error)
-            )
+          NonEqualEncodingException.check(toUnicodeResult, error.unsafePartiallyMappedInput, Context.ToUnicode).fold(
+            Chain.empty[Throwable]
+          )(error =>
+            Chain.one(error)
           )
 
         statusErrors |+| resultErrors
@@ -142,10 +138,15 @@ object ConformanceTest {
   }
 
 
-  def idnaExceptionToStatus(value: IDNAException, context: Context): Either[UnexpectedIDNAException, Status] =
+  def idnaExceptionToStatus(value: IDNAException, context: Context): Either[UnexpectedIDNAException, NonEmptySet[Status]] =
     value match {
       case _: CodePointMapper.CodePointMappingException =>
-        Right(Status.Processing(1L, None))
+        Right(
+          NonEmptySet.of(
+            Status.Processing(1L, None),
+            Status.Validity(6L, None)
+          )
+        )
       case _ =>
         Left(new UnexpectedIDNAException(value, context))
     }

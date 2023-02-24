@@ -21,6 +21,7 @@
 
 package org.typelevel.idna4s.core.uts46
 
+import cats._
 import cats.data._
 import cats.syntax.all._
 import java.text.Normalizer
@@ -460,19 +461,19 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
     def shouldCheckBidi: Boolean =
       checkBidi && isBidiDomainName(value)
 
-    def processLabel(label: String): Ior[NonEmptyChain[IDNAException], String] = {
-      def validateLablel(label: String): Ior[NonEmptyChain[IDNAException], String] =
+    def processLabel(label: String): Writer[Chain[IDNAException], String] = {
+      def validateLabel(label: String): Writer[Chain[IDNAException], String] =
         NonEmptyChain.fromChain(validInternal(checkHyphens = checkHyphens, checkBidi = shouldCheckBidi, checkJoiners = checkJoiners, label)) match {
           case Some(nec) =>
-            Ior.both(nec, label)
+            Writer(nec.toChain, label)
           case _ =>
-            Ior.right(label)
+            label.pure[Writer[Chain[IDNAException], *]]
         }
 
       if (label.startsWith(PUNYCODE_PREFIX)) {
-        Bootstring.decodePunycodeRaw(label.drop(4)) match {
+        Bootstring.decodePunycodeRaw(label.drop(PUNYCODE_PREFIX.size)) match {
           case Left(e) =>
-            Ior.both(NonEmptyChain.one(e), label)
+            Writer(Chain.one(e), label)
           case Right(label) =>
             // When it is a Punycode label, we would always use
             // non-transitional processing for validation according to UTS-46,
@@ -481,28 +482,17 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
             // has already gone through the UTS-46 mapping step. It is only
             // applicable if we are applying the validity check to an
             // arbitrary string, which we never do.
-            validateLablel(label)
+            validateLabel(label)
         }
       } else {
-        validateLablel(label)
+        validateLabel(label)
       }
     }
 
-    @tailrec
-    def processLabels(labels: NonEmptyChain[String], acc: Ior[NonEmptyChain[IDNAException], NonEmptyChain[String]]): Ior[NonEmptyChain[IDNAException], NonEmptyChain[String]] =
-      labels.uncons match {
-        case (label, labels) =>
-          acc.combine(processLabel(label).map(NonEmptyChain.one)) match {
-            // Intentional Shadow
-            case acc =>
-              NonEmptyChain.fromChain(labels) match {
-                case Some(labels) =>
-                  processLabels(labels, acc)
-                case _ =>
-                  acc
-              }
-          }
-      }
+    def processLabels(labels: NonEmptyChain[String]): Writer[Chain[IDNAException], NonEmptyChain[String]] =
+      labels.reduceMap(label =>
+        processLabel(label).map(NonEmptyChain.one)
+      )
 
     @tailrec
     def toLabels(value: String, acc: Chain[String]): NonEmptyChain[String] =
@@ -520,22 +510,12 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
       }
 
     CodePointMapper.mapCodePoints(useStd3ASCIIRules, transitionalProcessing)(value).map(nfc).fold(
-      error => Ior.both(error.errors, error.unsafePartiallyMappedInput),
-      mapped => Ior.right(mapped)
-    ).flatMap(value =>
-      (toLabels(value, Chain.empty).uncons match {
-        case (label, labels) =>
-          processLabel(label).map(NonEmptyChain.one) match {
-            case acc =>
-              NonEmptyChain.fromChain(labels) match {
-                case Some(labels) =>
-                  processLabels(labels, acc)
-                case _ =>
-                  acc
-              }
-          }
-      })
-    )
+      error => Writer(error.errors.toChain: Chain[IDNAException], error.unsafePartiallyMappedInput),
+      _.pure[Writer[Chain[IDNAException], *]]
+    ).flatMap{(value: String) =>
+      val labels: NonEmptyChain[String] = toLabels(value, Chain.empty)
+      processLabels(labels)
+    }
   }
 
   private def nfc(value: String): String =
@@ -578,23 +558,25 @@ object UTS46 extends GeneratedUnicodeData with GeneratedJoiningType with Generat
   sealed abstract class UTS46FailureException extends IDNAException with NoStackTrace {
     def errors: NonEmptyChain[IDNAException]
 
-    def renderablePartiallyMappedInput: String
+    def unsafePartiallyMappedInput: String
+
+    final lazy val renderablePartiallyMappedInput: String =
+      CodePointMapper.mapCodePoints(unsafePartiallyMappedInput).valueOr(
+        _.renderablePartiallyMappedInput
+      )
 
     override final def getMessage: String =
       s"""Errors encountered during UTS-46 processing: ${errors.map(_.getLocalizedMessage).mkString_(", ")}"""
 
     override final def toString: String =
-      s"UTS46FailureException(errors = ${errors}, renderablePartiallyMappedInput = ${renderablePartiallyMappedInput})"
+      s"UTS46FailureException(errors = ${errors}, renderablePartiallyMappedInput = ${renderablePartiallyMappedInput}, unsafePartiallyMappedInputHash = ${unsafePartiallyMappedInput.hash})"
   }
 
   object UTS46FailureException {
-    private[this] final case class UTS46FailureExceptionImpl(override val errors: NonEmptyChain[IDNAException], override val renderablePartiallyMappedInput: String) extends UTS46FailureException
+    private[this] final case class UTS46FailureExceptionImpl(override val errors: NonEmptyChain[IDNAException], override val unsafePartiallyMappedInput: String) extends UTS46FailureException
 
-    private[this] def replaceDiallowedCodePoints(value: String): String =
-      ???
-
-    private[UTS46] def apply(errors: NonEmptyChain[IDNAException], renderablePartiallyMappedInput: String): UTS46FailureException =
-      UTS46FailureExceptionImpl(errors, replaceDiallowedCodePoints(renderablePartiallyMappedInput))
+    private[UTS46] def apply(errors: NonEmptyChain[IDNAException], unsafePartiallyMappedInput: String): UTS46FailureException =
+      UTS46FailureExceptionImpl(errors, unsafePartiallyMappedInput)
   }
 
   sealed abstract class UTS46Exception extends IDNAException with NoStackTrace

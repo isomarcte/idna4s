@@ -11,3 +11,5 @@ tags
 metals.sbt
 .vscode
 .bsp
+
+/codegenFiles

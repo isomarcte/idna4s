@@ -50,6 +50,17 @@ ThisBuild / wildcardImport := {
   }
 }
 
+lazy val codegenCacheDir: SettingKey[java.nio.file.Path] =
+  settingKey[java.nio.file.Path]("The directory where the files used for codegen will be downloaded. This allows us to not have to download them on each run.")
+ThisBuild / codegenCacheDir := {
+  import java.nio.file._
+
+  val cacheDir: File = localCacheDirectory.value
+  val projectCacheDir: Path = Paths.get("org", "typelevel", "idna4s")
+
+  cacheDir.toPath.resolve(projectCacheDir)
+}
+
 // Scalafix
 
 // Use the scalafix config which is valid for all versions of Scala if

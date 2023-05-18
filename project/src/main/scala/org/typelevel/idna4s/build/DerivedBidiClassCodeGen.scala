@@ -121,7 +121,7 @@ private[build] object DerivedBidiClassCodeGen {
           .toURL()
       )
       .leftMap(_.getLocalizedMessage)
-      .flatMap(
+     .flatMap(
         bidiPropertyValueAlisesFromURL
       )
 
